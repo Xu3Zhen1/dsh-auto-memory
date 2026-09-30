@@ -187,7 +187,7 @@ ok(damNoMixedEol(SRC), 'E2 纯 CRLF')
 //   ③ 上述 3.2.5 全部修复保留。
 //   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
 //   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
-eq(createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase(), '4BE9989C5B23B971', 'E3 ★宿主 lib/index.js 基线守恒（sha16 = R65 基线（PR #150 皮肤 + PR #155 运行时修复 两批合并）；R63→R65 放行 = skinAssetRelOfPre/skinAbsPathOfPre 加 deep 参数（素材路由 ?deep=1 选暗色素材）+ #152 增量开关每轮取值 + #153 默认模型回退共用解析器 + #154 接续创建失败显式报错不丢源工作区 + 上述 3.2.5 全部修复保留，理由见上）')
+eq(createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase(), '352556E7B029DAD6', 'E3 ★宿主 lib/index.js 基线守恒（sha16 = R65-fork 基线 = 上游 R65（PR #150 皮肤 + PR #155 运行时修复两批 + 3.2.5 全部修复）之上**叠加本 fork 的 A/B/C 三项交接模块优化**；fork 放行 = ①arm 闸与 over 共用 armEligiblePre + 早退点同帧 diag（报告 §2.7/§2.8）②契约指针进 navParts（§3）③仪式判据改「回合已静默」（§4）；上游 R63→R65 放行理由见上，本 fork 理由见 plan/交接模块优化评估报告.md）')
 // R64 (LF-normalized hash): #153 shared profile/block model parser and paired fallback route; #154 source-workspace create guard.
 // ★2026-09-28 计数演进：67→68（新增 skin-library-fetch，见 E3 同批）。语义保留：仍锁路由数不漂移。
 eq(cnt(IX, "path: API[") + cnt(IX, 'path: API.'), 68, 'E4 ★路由数守恒 = 68（2026-09-28 皮肤库路由 +1；其余零新增）')
