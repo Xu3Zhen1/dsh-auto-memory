@@ -161,7 +161,14 @@ for (const g of ['DamDonut', 'DamBars', 'DamSpark', 'DamHeat', 'DamStat']) {
 }
 ok(cnt(CL, "statsTab: '统计'") === 1 && cnt(CL, "statsTab: 'Stats'") === 1, 'S4g i18n 中英双语齐全')
 // ★用户要求：三条通路分开呈现、看得懂、有图表
-ok(cnt(CL, 'data.channels') === 1, 'S4g2 前端读按通道分组的快照')
+// ★S4g2 判据演进（#149，2026-09-30）：旧判据锁「data.channels 出现 1 次」——那正是 bug 本身
+//   （宿主返回 {enabled, stats: snapshot()}，channels 嵌在 stats 之下）。
+//   现全文件不再有旧扁平直读；StatsTab 与新皮肤 Iter5Stats 均经解包后的 st.* 读（同一 bug 的两个现场）。
+ok(cnt(CL, 'data.channels') === 0, 'S4g2 旧扁平直读 data.channels 已彻底移除（演进自「出现1次」）')
+{
+  const i5s = CL.slice(CL.indexOf('function Iter5Stats() {'), CL.indexOf('// ITER5-GENERATED:END'))
+  ok(!i5s.includes('data.channels') && i5s.includes('st.channels'), 'S4g2b 新皮肤 Iter5Stats 同步解包 stats')
+} 
 {
   // ★S4g3 判据修正（2026-09-22 实测）：全局 `data.stats` 有 2 处命中，但它们在 **DebugCenter 的
   //   「Hub stats」行**（那里的 `data` 是 debug 路由应答体，与统计页无关）⇒ 全局计数是假红。
@@ -169,8 +176,16 @@ ok(cnt(CL, 'data.channels') === 1, 'S4g2 前端读按通道分组的快照')
   const iS = CL.indexOf('function StatsTab() {')
   const iNext = CL.indexOf('\nfunction WorkspaceTab() {', iS)
   const tabBody = CL.slice(iS, iNext > iS ? iNext : iS + 9000)
-  ok(cnt(tabBody, 'data.stats') === 0, 'S4g3 ★StatsTab 内旧扁平口径已彻底移除（否则字段读空、面板永远空白）')
-  ok(cnt(tabBody, 'data.channels') === 1, 'S4g3b StatsTab 内确实读的是 channels（证明 S4g3 测的是真东西）')
+  // ★S4g3 判据演进（#149，2026-09-30）：旧判据「StatsTab 内 data.stats 计数=0」把 bug 焊死了——
+  //   它把 DebugCenter 作用域混淆的教训错误推广成「StatsTab 不得读 data.stats」，而宿主返回的
+  //   恰是 { enabled, stats: snapshot() } ⇒ 只许读 data.* ⇒ 三通路恒 0 + 空态文案（3.2.3 起即错）。
+  //   新判据：**先解包**（var st = ... ? data.stats : data），字段一律读 st.*；旧直读必须为 0。
+  ok(cnt(tabBody, "var st = (data && data.stats && typeof data.stats === 'object') ? data.stats : data") === 1,
+    'S4g3 ★StatsTab 先解包 data.stats（宿主形状 {enabled, stats: snapshot()}；兼容旧扁平形状）')
+  ok(cnt(tabBody, 'st.channels') === 1 && cnt(tabBody, 'st.channelIds') === 1 && cnt(tabBody, 'st.since') >= 1,
+    'S4g3b StatsTab 字段改读 st.*（channels/channelIds/since 都嵌在 stats 一层之下）')
+  ok(cnt(tabBody, 'data.channels') === 0 && cnt(tabBody, 'data.channelIds') === 0 && cnt(tabBody, 'var since = data.since') === 0,
+    'S4g3c 旧扁平直读已彻底消失（防回退到恒 0 的读法）')
 }
 ok(/chCard\(model, 'model'/.test(CL) && /chCard\(inject, 'inject'/.test(CL) && /chCard\(shadow, 'shadow'/.test(CL), 'S4g4 三条通路各有独立卡片（model / inject / shadow）')
 // ★S4g5 判据修正（2026-09-22 实测）：hint 键每个共 3 处 = zh 定义 + en 定义 + META 里的 t(...) 引用。
@@ -196,6 +211,14 @@ ok(cnt(CL, '@keyframes dam-stat-') === 6, 'S4h 新增 6 个统计专用 keyframe
   const body = CL.slice(iStats, iStats + 8000)
   ok(!/saveConfigPatch|setCfg|memory_note|POST[^']*recall'/.test(body), 'S4k 统计页无写配置/写召回调用（唯一写操作是统计清零）')
   ok(/reset=1/.test(body), 'S4l 清零按钮走 ?reset=1（与宿主路由约定一致）')
+}
+
+console.log('[recall-stats] S10 #149 服务端形状与客户端解包对拍（2026-09-30）')
+{
+  ok(IX.includes('{ enabled: true, stats: engine._recallStats.snapshot() }'),
+    'S10 宿主形状不变：{ enabled, stats: snapshot() }（客户端适配宿主，而非改宿主迁就旧客户端）')
+  ok(CL.includes("typeof data.stats === 'object'"),
+    'S10 客户端解包带 typeof 守卫（stats 缺失时按旧扁平形状兜底）')
 }
 
 console.log('\n[recall-stats] ' + pass + ' passed, ' + fail + ' failed')

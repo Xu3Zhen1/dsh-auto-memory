@@ -1,0 +1,10 @@
+{
+  "checks": [
+    "Real host welcome step 1",
+    "Real host welcome step 2",
+    "Real host welcome step 3",
+    "Existing compact surface opens with new skin active",
+    "Compact panel drag geometry remains functional"
+  ],
+  "errors": []
+}

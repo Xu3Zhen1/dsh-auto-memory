@@ -69,11 +69,15 @@ const API = {
   state: '/api/dsh-auto-memory/handoff-state',
   cont: '/api/dsh-auto-memory/handoff-continue',
 }
-const call = async (p, method) => {
+const call = async (p, method, bodyObj) => {
   let body = null
   const route = routes.find((r) => r.path === p)
   if (!route) throw new Error('route not registered: ' + p)
-  await route.handler({ socket: { remoteAddress: '127.0.0.1' }, headers: { host: '127.0.0.1:3080' }, method, url: p }, { writeHead() {}, end(b) { body = JSON.parse(b) } })
+  const req = { socket: { remoteAddress: '127.0.0.1' }, headers: { host: '127.0.0.1:3080' }, method, url: p }
+  // H10(2026-09-28):需要喂 fromSessionId —— readJsonBody 走 `for await (const chunk of req)`,
+  // 故用异步可迭代对象模拟请求体;不传 bodyObj 时保持原形态(readJsonBody 拒绝非迭代 → {})。
+  if (bodyObj !== undefined) req[Symbol.asyncIterator] = async function* () { yield Buffer.from(JSON.stringify(bodyObj)) }
+  await route.handler(req, { writeHead() {}, end(b) { body = JSON.parse(b) } })
   return body
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -159,6 +163,81 @@ handlers2['agent/session-start']({ agent: { session: { id: SID, header: { cwd: W
 await sleep(400)
 const r9 = await call2(API.cont, 'POST')
 ok(r9 && r9.ok === true && r9.workspaceId === '', 'H9 无 workspaceRegistry 服务 => 不抛错、workspaceId=\'\'')
+
+console.log('[continue-host] H10 材料跟源会话工作区走(修「工作目录不正确」,2026-09-28)')
+// ★旧实现(2.2.1 起,此前无人动过):buildContinueCarry/buildPrevSessionPack 按插件**当前工作区**
+//   (resolvePaths(undefined) → state.ws/process.cwd())取 PLAN/账本/锚点表、落转写包 —— 多工作区时
+//   把别的工作区材料当成交接材料(真机实证 2026-09-28:aik 会话 f49ace38 的包落进
+//   --D--dsh-auto-memory-- 桶,包内「工作区:」一行与落盘桶自相矛盾)。修后一律跟**源会话**走:
+//   此处构造「state.ws 仍指向 A(H1 的 session-start 所设)、源会话在 B」的场景对拍。
+{
+  const SRC = readFileSync(new URL('../../lib/index.js', import.meta.url), 'utf8')
+  ok(/async buildPrevSessionPack\(preferSid\) \{[\s\S]{0,3000}?const p = await this\.resolvePathsForSession\(sid\)/.test(SRC),
+    'S-guard 包落盘目录按源会话解析(resolvePathsForSession(sid))')
+  ok(/async buildContinueCarry\(preferSid\) \{[\s\S]{0,1600}?const p = await this\.resolvePathsForSession\(String\(preferSid \|\| this\.currentSessionId\(\) \|\| ''\)\)/.test(SRC),
+    'S-guard 材料 PLAN/账本按源会话解析(resolvePathsForSession(preferSid…))')
+}
+const WS_B = 'D:\\dam-continue-proj-b'
+const SID_B = 'session-continue-live-000b'
+const sidBDir = path.join(home, 'sessions', 'wsB', SID_B)
+mkdirSync(sidBDir, { recursive: true })
+const linesB = [JSON.stringify({ agentPreset: 'default', cwd: WS_B })]
+linesB.push(JSON.stringify({ type: 'user/message', data: { message: { role: 'user', content: [{ type: 'text', text: 'B 工作区唯一消息' }] } } }))
+writeFileSync(path.join(sidBDir, 'session.jsonl'), linesB.join('\n') + '\n', 'utf8')
+const bucketBHandoff = path.join(root, '.memory-root', '--D--dam-continue-proj-b--', 'handoff')
+mkdirSync(bucketBHandoff, { recursive: true })
+writeFileSync(path.join(bucketBHandoff, 'PLAN.md'), '# 白板B\n## 当前目标\n- WSB-ONLY-MARKER\n', 'utf8')
+registryHolder.reg.list = () => [
+  { id: 'ws-continue-1', path: WS_PATH, sessionIds: [SID] },
+  { id: 'ws-b', path: WS_B, sessionIds: [SID_B] },
+]
+const r10 = await call(API.cont, 'POST', { fromSessionId: SID_B })
+ok(r10 && r10.ok === true, 'H10 接续材料 ok')
+ok(r10.carryText.includes('WSB-ONLY-MARKER'), 'H10 第0层 PLAN 取自源会话工作区 B 桶(不再读当前工作区)')
+ok(!r10.carryText.includes('验证接续链路'), 'H10 不再把工作区 A 的 PLAN 混进材料')
+ok(!!r10.transcriptPath && r10.transcriptPath.includes('--D--dam-continue-proj-b--') && existsSync(r10.transcriptPath),
+  'H10 转写包落盘到源会话工作区 B 桶(' + String(r10.transcriptPath).split('.memory-root').pop() + ')')
+ok(r10.workspaceId === 'ws-b', 'H10 workspaceId 按 B 会话归属解析')
+ok(r10.wsBase === 'dam-continue-proj-b', 'H10 wsBase 取源会话 cwd 基名')
+registryHolder.reg.list = origList
+
+console.log('[continue-host] H11 源会话文件缺失时拒绝 _lastAgent 顶替(修「A区点接续、新会话在B区」,2026-09-30)')
+// ★2026-09-30 三条漂移通道的行为级守卫:
+//   通道② buildPrevSessionPack:显式传入了源会话(want)但它没有持久化文件时,旧实现会**静默改用**
+//     _lastAgent(最近活跃会话)的转写包 —— cwd/模型/转写整体换成别的会话的,且 pack.cwd 存在 ⇒
+//     wsFallback 警告都不触发,新会话静默落进别的工作区。通道③ buildContinueCarry:pack=null 时
+//     prevSid 落全局 currentSessionId(),同样漂。
+//   本用例构造:把「最近活跃会话」换成 other(带独有标记文本与独立 cwd),然后用一个盘上不存在的
+//     ghost 会话 id 调 handoff-continue —— 旧代码在此必然把 other 的材料/模型顶替进来(本组断言全红),
+//     新代码必须:身份=ghost、无 other 材料/模型、wsFallback=true、workspaceId=''。
+{
+  const SRC = readFileSync(new URL('../../lib/index.js', import.meta.url), 'utf8')
+  ok(SRC.includes('if (want && cand !== want) break'),
+    'H11 源码守卫:want 显式给出时只找 want 的文件(不再静默扫 lastSid)')
+  ok(SRC.includes("const prevSid = (pack && pack.sessionId) || String(preferSid || '') || this.currentSessionId()"),
+    'H11 源码守卫:pack=null 时 prevSid 仍沿用显式 preferSid(不落全局最近活跃)')
+  const OTHER_SID = 'session-other-live-0002'
+  const GHOST_SID = 'session-ghost-99999999'
+  const OTHER_WS = 'D:\\dam-continue-other-proj'
+  const otherDir = path.join(home, 'sessions', 'wsA', OTHER_SID)
+  mkdirSync(otherDir, { recursive: true })
+  const otherLines = [JSON.stringify({ agentPreset: 'default', cwd: OTHER_WS })]
+  otherLines.push(JSON.stringify({ type: 'user/message', data: { message: { role: 'user', content: [{ type: 'text', text: 'H11OTHER-ONLY-MARKER 其他会话的独有正文,绝不允许漂进接续材料' }] } } }))
+  otherLines.push(JSON.stringify({ type: 'request/header', data: { header: { config: { provider: 'other-provider', model: 'other-model', reasoningEffort: 'low' } } } }))
+  const NL = String.fromCharCode(10)
+  writeFileSync(path.join(otherDir, 'session.jsonl'), otherLines.join(NL) + NL, 'utf8')
+  // 把「最近活跃会话」切成 other(_lastAgent=other;旧实现正是拿它顶替 want)
+  handlers['agent/session-start']({ agent: { session: { id: OTHER_SID, header: { cwd: OTHER_WS } } }, source: 'test' })
+  await sleep(300)
+  const r11 = await call(API.cont, 'POST', { fromSessionId: GHOST_SID })
+  ok(r11 && r11.ok === true, 'H11 ghost 源会话仍能出材料(诚实降级,不炸)')
+  ok(r11.prevSessionId === GHOST_SID, 'H11 身份不漂:prevSessionId=ghost(' + String(r11 && r11.prevSessionId) + '),未被最近活跃会话顶替')
+  ok(r11.model === '' && r11.provider === '', 'H11 模型不漂:未把 other 的 provider/model 继承给新会话')
+  ok(r11.transcriptPath === '' && !existsSync(r11.transcriptPath || 'x'), 'H11 无转写包(ghost 无文件,不拿别人的包充数)')
+  ok(!String(r11.carryText || '').includes('H11OTHER-ONLY-MARKER'), 'H11 材料不漂:other 的独有正文未混进 carry')
+  ok(r11.wsFallback === true, 'H11 wsFallback=true(工作区定位不到,显式告知而非静默)')
+  ok(r11.workspaceId === '', 'H11 workspaceId 解析不到 => 空串(client 回退 cwd,不猜)')
+}
 
 for (const d of effects) { try { if (typeof d === 'function') d() } catch (e) {} }
 console.log('\n[continue-host] ' + pass + ' passed, ' + fail + ' failed')

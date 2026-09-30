@@ -11,6 +11,16 @@ import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
+/** 平台无关行尾守恒：存在 CRLF 时不得有裸 LF；全 LF 合法（CI/Linux 检出态）。
+ *  ★2026-09-28：原断言写作 cnt(NL)===cnt(CRNL)（即"必须全 CRLF"），在 Linux CI 上必红——
+ *  索引里是 LF，本机 core.autocrlf=true 才检出 CRLF。守的语义不变：文件不得混合行尾。 */
+const damNoMixedEol = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length
+  const lf = (s.match(/\n/g) || []).length
+  if (crlf === 0) return true      // 全 LF：合法（CI 检出态）
+  return crlf === lf               // 有 CRLF 则不得再有裸 LF
+}
+
 // ★2026-09-28 多语言化：源码内联文案已改为 L(甲, 乙)。抽段进 vm 的套件需要同名桩。
 // 注入到各 vm 沙箱：L / L3 / normLocale 桩（闭包捕获 self，不依赖 this）
 // 注入到各 vm 沙箱：L / L3 / normLocale 桩（闭包捕获 self，不依赖 this）
@@ -67,7 +77,7 @@ ok(cnt(SRC, 'data-dam-team\': \'bar\'') >= 1 && cnt(SRC, 'data-dam-team\': \'tab
 ok(cnt(SRC, 'data-dam-region') >= 18, 'A4 结构锚不降（region ' + cnt(SRC, 'data-dam-region') + '）');
 ok(cnt(SRC, 'data-dam-slot') >= 432, 'A5 slot 锚增加（' + cnt(SRC, 'data-dam-slot') + '）');
 eq((SRC.match(/(?<!function )MEMORY_TABS\(\)/g) || []).length, 2, 'A6 ★计数锁 MEMORY_TABS() 调用数 = 2');
-ok(cnt(SRC, '\n') === cnt(SRC, '\r\n'), 'A7 纯 CRLF（裸 LF 0）');
+ok(damNoMixedEol(SRC), 'A7 纯 CRLF（裸 LF 0）');
 
 // ── 真执行：抽 R18 段 ──
 const B = '    // ═══════════════ fe02 八屏契约 · 屏①–④（R18）═══════════════';

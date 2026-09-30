@@ -1,0 +1,20 @@
+const fs=require('node:fs')
+const file='lib/client.js'
+let source=fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n')
+const start=source.indexOf('    function DebugCenter() {'),end=source.indexOf('    function loadWelcomeTourSettingsPre',start)
+let part=source.slice(start,end)
+function replace(a,b){if(part.split(a).length!==2)throw Error('ambiguous seam '+a.slice(0,70));part=part.replace(a,b)}
+replace("'data-dam-row': '', style: { marginBottom: '3px' }", "'data-dam-row': '', 'data-native-diag-row': '', 'data-warning': warn ? 'true' : undefined, style: { marginBottom: '3px' }")
+replace("      return h('div', null,\n        h('div',", "      return h('div', { 'data-native-diagnostics': '' },\n        h('div',")
+replace("        kv(t('kvVersion'),", "        h('section', null, h('h3', null, L('运行环境', 'Runtime')),\n        kv(t('kvVersion'),")
+replace("        kv(t('kvQueue'),", "        kv(t('kvWs'), currentWs() || t('kvWsUnknown'), false)),\n        h('section', null, h('h3', null, L('记忆与整理', 'Memory and consolidation')),\n        kv(t('kvQueue'),")
+replace("        kv('subagents', data.subagents.available ? (data.subagents.providers.join(', ') || t('kvAvail')) : t('kvUnavail'), !data.subagents.available),\n", '')
+replace("        kv(t('kvWs'), currentWs() || t('kvWsUnknown'), false),\n", '')
+const api="        kv(t('kvApi'), probes ? Object.keys(probes).map(function (k) { return k + '=' + (probes[k].status !== undefined ? probes[k].status : probes[k].error) }).join('  ') : '…', apiBad),\n"
+replace(api,'')
+replace("        hubIo ? kv(t('dbgHubIo'), hubIoText, hubIoWarn) : null,", "        hubIo ? kv(t('dbgHubIo'), hubIoText, hubIoWarn) : null,\n        fp ? kv(t('dbgPrune'), fpText, fpWarn) : null),\n        h('section', null, h('h3', null, L('诊断日志', 'Diagnostic logs')),")
+replace("        fp ? kv(t('dbgPrune'), fpText, fpWarn) : null,\n        pySide", "        null),\n        h('section', null, h('h3', null, L('服务与接口', 'Services and endpoints')),\n        kv('subagents', data.subagents.available ? (data.subagents.providers.join(', ') || t('kvAvail')) : t('kvUnavail'), !data.subagents.available),\n"+api+"        pySide")
+replace("              : null)) : null,\n        h('div'", "              : null)) : null),\n        h('section', null, h('h3', null, L('文件内容检查', 'File content checks')),\n        h('div'")
+replace('          }) : null))','          }) : null)))')
+source=source.slice(0,start)+part+source.slice(end)
+fs.writeFileSync(file,source.replace(/\n/g,'\r\n'))

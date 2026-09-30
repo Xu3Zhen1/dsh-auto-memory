@@ -72,9 +72,14 @@ console.log('[E] js semantic engine (injected embedder)')
   ok(st1.ready === true && st1.model === 'fake/q8' && st1.indexedRecords === 3, 'status reflects ready + indexed count')
   const bad = await eng.rank({ memoryIndexVersion: 'not-a-miv', records }, '任意')
   ok(bad === null, 'invalid miv → null (fail closed)')
+  // ★2026-09-29 夹具修正（C2 增量嵌入批）：原 `embedPassages() { return [] }` **并未抛错** ——
+  //   旧代码靠顺序巧合（先建出 vec:undefined 的条目，再由 embedQuery 炸）才让本用例通过；
+  //   若 embedQuery 不抛，旧代码会**静默返回空分数**（半套排序，本仓最忌）。
+  //   本用例自称测「embedder failure」，夹具就该真的失败 ⇒ 两个方法都抛。
+  //   两种实现下断言不变：rank null + lastRankError 含原始错误。
   const boom = SEM.createJsSemanticEnginePre({
     pluginDir: home,
-    injectEmbedder: { model: 'boom', async embedQuery() { throw new Error('embed-exploded') }, async embedPassages() { return [] } },
+    injectEmbedder: { model: 'boom', async embedQuery() { throw new Error('embed-exploded') }, async embedPassages() { throw new Error('embed-exploded') } },
   })
   const rBoom = await boom.rank({ memoryIndexVersion: miv, records }, '琥珀')
   ok(rBoom === null && boom.status().lastRankError.includes('embed-exploded'), 'embedder failure → rank null + lastRankError recorded (caller falls back to lexical)')

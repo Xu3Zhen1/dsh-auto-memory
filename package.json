@@ -1,23 +1,34 @@
 {
   "name": "@a9i5k4/dsh-auto-memory",
   "description": "Proactive associative memory for DSH: zero-prompt recall injected before the model speaks, three-layer auto-consolidation, skill crystallization, and Astra-style context management - handoff ledgers, PLAN whiteboard, water-level sensing. Local-first, model-agnostic, zero deps. 主动联想记忆+Astra 式上下文管理:自动唤回/自动沉淀/技能固化/交接账本与白板跨窗口续命/水位感知。",
-  "version": "3.2.1",
+  "version": "3.2.5",
   "type": "module",
   "main": "lib/index.js",
+  "icon": "./icon.svg",
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "lib",
     "python",
     "docs",
     "skins",
+    "icon.svg",
+    "locale",
     "cordis.patch.yml",
     "!python/bench",
     "!python/__pycache__",
     "!docs/internal",
+    "!docs/ui-demo-*",
+    "!docs/ui-demo",
+    "!docs/ui-redesign-*",
+    "!docs/ui-rebuild-handoff-*",
+    "!docs/teamwork-impl/concept",
+    "!docs/teamwork-impl/_shots",
+    "!**/node_modules",
     "!**/*.bak*",
     "!lib/*.m8b*bak*"
   ],

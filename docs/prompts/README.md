@@ -63,10 +63,10 @@
 | `P10-importance-calibration.md` | importance 效应定标：`0.5+w×imp` 可配置 + 真实查询翻转率实测 | **P9 结论后** | `lib/index.js` dense 臂一行 + 配置项 | 低 |
 | `P11-silent-catch-observability.md` | fail-soft 空 catch 统一加 diag（**只加日志不改行为**，可与 P9 并行） | 无 | `lib/index.js` catch 行 | 低 |
 | **`FIX-AGENT-P11.md`** | **⭐ 复制即投喂：静默 catch 可观测（自包含，可与 P9 并行给另一 Agent）** | 无 | `lib/index.js` catch 行 | 低 |
-| **`RELEASE-AGENT.md`** | **⭐ 复制即投喂：发版执行子代理（自包含；主对话=决策者只做开闸/放行/处置，见 `docs/internal/RELEASE-PROCESS.md` 顶部角色分工）** | 前置门已过 | `CHANGELOG.md` + `lib/client.js` 版本标识三处 | 高（单向门） |
-| **`REGRESSION-AGENT.md`** | **⭐ 复制即投喂：全量回归执行（只读；失败套件单跑复验规则）** | 无 | 无（只跑不改） | 无 |
-| **`DOCS-AUDIT-AGENT.md`** | **⭐ 复制即投喂：README/USER-GUIDE 双语对账（只读，产出对账单）** | 无 | 无（只读） | 无 |
-| **`TRACE-PATROL-AGENT.md`** | **⭐ 复制即投喂：子代理痕迹巡检（只读盘点 + GC 备份区 + 残留风险）** | 无 | 无（只读） | 无 |
+| **`RELEASE-AGENT.md`** | **发版执行清单（★2026-09-28 起：由当前对话亲自逐步执行，**不再派发**；见 `docs/internal/RELEASE-PROCESS.md` 顶部角色分工）** | 前置门已过 | `CHANGELOG.md` + `lib/client.js` 版本标识三处 | 高（单向门） |
+| **`REGRESSION-AGENT.md`** | **全量回归清单（只读；失败套件单跑复验规则）——当前对话自跑** | 无 | 无（只跑不改） | 无 |
+| **`DOCS-AUDIT-AGENT.md`** | **README/USER-GUIDE 双语对账清单（只读，产出对账单）——当前对话自跑** | 无 | 无（只读） | 无 |
+| **`TRACE-PATROL-AGENT.md`** | **子代理痕迹巡检清单（只读盘点 + GC 备份区 + 残留风险）——当前对话自跑** | 无 | 无（只读） | 无 |
 | `EXEC-ORDER.md` | 执行顺序与冲突提示 | — | — | — |
 
 ---

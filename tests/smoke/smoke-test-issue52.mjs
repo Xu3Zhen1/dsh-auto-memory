@@ -17,9 +17,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert'
 import { test } from 'node:test'
+import { stripGeneratedSkin } from '../lib/skin-bundle.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const SRC = readFileSync(path.resolve(HERE, '..', '..', 'lib', 'client.js'), 'utf8').replace(/\r\n/g, '\n')
+// ★2026-09-28（集成 iter5 皮肤）：本套件断言的是**经典档契约**（函数式更新写法等），
+//   而生成区把若干经典组件派生了一份新皮肤版本（SettingsPage→Iter5Settings 等）⇒ 计数/唯一性失真。
+//   故此处剥离生成区再断言 —— 不是放宽判据，而是把作用域限定到它真正该守的经典档。
+//   皮肤自身由 smoke-test-iter5-skin.mjs 验收（含「剥离后与基线逐字节一致」的守恒断言）。
+const SRC = stripGeneratedSkin(readFileSync(path.resolve(HERE, '..', '..', 'lib', 'client.js'), 'utf8').replace(/\r\n/g, '\n'))
 
 // —— 抽取真实实现 ——
 const setLine = SRC.match(/\n {4}function set\(key, value\) \{[^\n]*\n/)

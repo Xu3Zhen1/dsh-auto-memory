@@ -1,0 +1,16 @@
+{
+  "fixture": true,
+  "realHost": true,
+  "checks": [
+    "home",
+    "library",
+    "handoff",
+    "calendar",
+    "skills",
+    "recall",
+    "mindmap",
+    "storage",
+    "settings"
+  ],
+  "errors": []
+}

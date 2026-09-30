@@ -1,0 +1,64 @@
+
+══ 缺口①：工作区注册 ══
+  PASS  workspaceRegistry.create 被调用（而非只读）  idx
+  PASS  注册后写 diag（可观测）
+  PASS  注册失败不影响工作台（try 包住）
+
+══ 缺口③：greeting loop（S4 纠错后：换**子代理代次**，不换会话）══
+  PASS  workbench.json 写入 greetCount
+  PASS  loop 上限可配（workbenchGreetLoop，默认 10）
+  PASS  ❌ 不得再有「满 10 换会话」判据
+  PASS  新增分类代次计数 bumpGenFor
+  PASS  代次按 label 分别落盘
+  PASS  满 loopSize ⇒ gen+1（会话不变）
+  PASS  greet 走代次计数
+  PASS  状态回显 gen 视图
+
+══ 缺口⑤：打开时复查（不轮询）══
+  PASS  visibilitychange 复查
+  PASS  focus 复查
+  PASS  未新增 setInterval 用于工作台  去注释后判定
+
+══ 既有不变式（回归保护）══
+  PASS  门控仍在（未就绪不发信息）
+  PASS  ⑰ 轮换不删旧会话（无删除 API 调用）
+  PASS  ⑱ 无 runN 独立变量
+  PASS  居中弹窗壳仍在
+  PASS  设置项 workbenchPeriod 仍在
+
+══ S1/S6/S8/S9（2026-09-24 · 对齐 docs/internal/WORKBENCH-SPEC.md）══
+  PASS  S1 工作台目录名常量 = aik_auto_memory_use
+  PASS  S1 默认值为空串（= 自动，不再硬编码 ~/.dsh/memory）
+  PASS  S1 落点用 dshHome() 推导（跨平台 + 与路径闸同口径）
+  PASS  S1 路径闸允许空串（= 回到自动）
+  PASS  S1 status 回显解析后的默认落点
+  PASS  S1 _workbenchCwd 读 config.workbenchRoot
+  PASS  S1 路径收窄到 dshHome 之下（非法 ⇒ fail-soft 回默认）
+  PASS  S1 设置页保留工作台目录的字符串输入
+  PASS  S1 欢迎使用布尔总开关，不把目录路径当作布尔写入
+  PASS  S1 目录选择器按调用方指定的键回填（不串改另一个设置）
+  PASS  S1 设置页占位显示 aik_auto_memory_use（留空=自动）
+  PASS  S1 workbenchRoot 走宿主路径闸（与 memoryRoot 同口径）
+  PASS  S6 校验工作区登记（workspace-unregistered）
+  PASS  S6 用 registry.list() 只读判定（不产生副作用）
+  PASS  S6 未登记时就地补登记，且先 list 查重（不重复 create）
+  PASS  S6 弹窗展示第 ④ 行「工作区登记」
+  PASS  S8 有撤窗助手 dismissWorkbenchSetupPre
+  PASS  S8 启动路径就绪即静默撤窗（向导路径回 exists 屏）
+  PASS  S8 工作台存在性只有一份判据 wbExistsPre（定义 + 开窗门 + 渲染相位三处引用）
+  PASS  D8 服务端 ready 报真值 + readySource 可诊断
+  PASS  D8b ready 不与内存态取或（防期号轮换漏报）
+  PASS  D8b 验证不通过时同步清内存就绪位（让惰性门控可重跑）
+  PASS  D9 同意门：结构性失败时未经同意不得新建（只回报 needPrompt）
+  PASS  D9 唯一建立入口显式传 consent
+  PASS  D9 同意门不得拦复用/瞬态分支（否则重启自愈被堵死）
+  PASS  S9 changelog 受工作台就绪闸门约束
+  PASS  S9 三处 update 弹窗全走闸门
+  PASS  S9 先定就绪状态再分发（同批触发）
+  PASS  S9 就绪判定有 5s 一次性上限（拒绝=未知 ⇒ 不阻塞更新通知）
+  PASS  S9 设置窗去重键带状态（关掉后可再次弹出，否则失败后永远配不上）
+  PASS  S6/⑰ 未引入任何**会话**删除调用
+  PASS  S6/⑰ 无裸 workspaceRegistry 删除调用（必须走受控入口）
+  PASS  S6/⑰ 工作区登记删除仅经受控入口（含三条自保判据）
+
+PASS 52 / FAIL 0

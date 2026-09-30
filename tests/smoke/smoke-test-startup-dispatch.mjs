@@ -31,8 +31,10 @@ ok(!/kind: 'first'/.test(SRC) && !/kind === 'first'/.test(SRC) && !/gFeat\d/.tes
 ok(/function dispatchStartupDialog\(d, cfg(?:, wbReady)?\) \{/.test(SRC), '具名分发函数存在(可状态机驱动,含宿主配置入参)')
 ok(/function welcomeAutoAllowedPre\(cfg\) \{/.test(SRC), 'welcomeAutoAllowedPre 配置闸函数存在')
 ok((SRC.match(/if \(allowTour && /g) || []).length === 3, '三个欢迎向导自动弹出分支全部经过 allowTour 配置闸')
-ok(SRC.includes("var seenV = (dialogState && dialogState.currentVersion) || lastV")
-  && SRC.includes("var seenV2 = (dialogState && dialogState.currentVersion) || lastV"),
+const updateView = SRC.slice(SRC.indexOf('function Iter5Update(props)'), SRC.indexOf('function Iter5AutoContinue(props)'))
+ok(SRC.includes("var seenV = (dialogState && dialogState.currentVersion) || lastV; if (seenV) localStorage.setItem('dsh-auto-memory.seenVersion', seenV)")
+  && SRC.includes('h(Iter5Update, { versions: versions, version: dialogState.currentVersion || lastV, onClose: function ()')
+  && updateView.includes('onClose: props.onClose') && updateView.includes('onClick: props.onClose'),
   'update 卡 ✕/知道了 关闭写入 currentVersion(修复 seen 被钉回 0.1.30 的「每次打开都弹」死循环)')
 
 // —— 抽取真实函数体 ——

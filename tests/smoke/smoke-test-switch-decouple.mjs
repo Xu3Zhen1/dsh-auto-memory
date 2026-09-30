@@ -274,6 +274,10 @@ console.log('[switch-decouple] D3 行为:buildContinueCarry 白板关 → 载体
       state: {},
     })
     fake.readLatestHandoff = bindMethod('async readLatestHandoff(handoffDir) {', fake)
+    // ★2026-09-28（R51）：buildContinueCarry 的材料解析改为 `this.resolvePathsForSession(preferSid…)`
+    //   （修「工作目录不正确」，见 continue-host H10）。抽取式沙箱纪律：被提取方法新增的 self 依赖
+    //   必须注入 —— 与上方 resolvePaths 同形（本夹具单工作区，两者等价）。
+    fake.resolvePathsForSession = fake.resolvePaths
     return bindMethod('async buildContinueCarry(preferSid) {', fake)
   }
   const rOff = await mkCarry(false)('session-old')

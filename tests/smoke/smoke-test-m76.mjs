@@ -1,4 +1,4 @@
-// M7-6 Semantic Activation 测试(任务集 §十,worker_semantic_pre_v1):
+// M7-6 Semantic Activation 测试(任务集 §十,worker_semantic_v1):
 // 双阈值 suppress/prefetch/emit + T_on>T_off 滞回 + cooldown;shadow 校准默认,
 // active 模式发 activation_request 帧——逐字段过现有 M6 validateActivationRequestPre;
 // provenance 从 corpus 复制;close_session 清 per-session 状态;未知 miv fail closed。
@@ -22,7 +22,7 @@ const CLIENT = await import('../../lib/python-sidecar-client.js')
 const SYNC = await import('../../lib/index-sync.js')
 const INBOX = await import('../../lib/activation-inbox.js')
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const SEM_WORKER = path.join(HERE, '..', '..', 'python', 'worker_semantic_pre_v1.py')
+const SEM_WORKER = path.join(HERE, '..', '..', 'python', 'worker_semantic_v1.py')
 
 function mkEmbConfig(home, activationPolicy) {
   const p = path.join(home, `emb-${Math.random().toString(36).slice(2, 7)}.json`)

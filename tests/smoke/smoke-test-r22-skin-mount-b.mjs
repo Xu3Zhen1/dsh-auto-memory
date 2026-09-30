@@ -2,11 +2,19 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
-import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-// ★2026-09-29 修回归门：原先硬编码 'D:/dsh-auto-memory'，fork 与 CI（/home/runner/...）下必 ENOENT。
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8');
+
+/** 平台无关行尾守恒：存在 CRLF 时不得有裸 LF；全 LF 合法（CI/Linux 检出态）。
+ *  ★2026-09-28：原断言写作 cnt(NL)===cnt(CRNL)（即"必须全 CRLF"），在 Linux CI 上必红——
+ *  索引里是 LF，本机 core.autocrlf=true 才检出 CRLF。守的语义不变：文件不得混合行尾。 */
+const damNoMixedEol = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length
+  const lf = (s.match(/\n/g) || []).length
+  if (crlf === 0) return true      // 全 LF：合法（CI 检出态）
+  return crlf === lf               // 有 CRLF 则不得再有裸 LF
+}
+const damPath = (rel) => fileURLToPath(new URL('../../' + rel, import.meta.url))
+const SRC = readFileSync(damPath('lib/client.js'), 'utf8');
 let pass = 0, fail = 0; const fails = [];
 const ok = (c, m) => { if (c) pass++; else { fail++; fails.push(m) } };
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']');
@@ -24,7 +32,7 @@ eq(cnt(SRC, 'h(SkinSyncIllust,'), 1, 'A4 ★illust.sync 真实挂载 = 1');
 ok(SRC.includes("pointerEvents: 'none'"), 'A5 ★背景层可交互穿透');
 ok(cnt(SRC, 'dam-bg-deep') >= 2, 'A6 ★深色底 token（53 卷可读性前提）');
 eq((SRC.match(/(?<!function )MEMORY_TABS\(\)/g) || []).length, 2, 'A7 计数锁不变');
-ok(cnt(SRC, '\n') === cnt(SRC, '\r\n'), 'A8 纯 CRLF');
+ok(damNoMixedEol(SRC), 'A8 纯 CRLF');
 ok(!/\.png|\.webp/.test(SEG), 'A9 纪律一：S2 段零路径字面量');
 // ★真执行 + 真调用
 const h = function (type, props) { const rest = Array.prototype.slice.call(arguments, 2), kids = [];

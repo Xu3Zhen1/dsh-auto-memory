@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Golden-parity + rule tests for m7_activation_features_pre_v2 (R1).
+"""Golden-parity + rule tests for m7_activation_features_v2 (R1).
 
 Parity: 55 fixtures pin the runtime behaviour of the shipped JSON artifacts;
 every field compared field-by-field with explicit tolerances. Any mismatch
@@ -20,15 +20,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, 'python'))
 
-import m7_activation_features_pre_v2 as v2  # noqa: E402
+import m7_activation_features_v2 as v2  # noqa: E402
 
 FIXTURES = os.path.join(ROOT, 'artifacts', 'm7-live-pre',
                         'label-review-cal20260824-1954',
                         'golden-parity-fixtures-v1.jsonl')
 INTENT_P = os.path.join(ROOT, 'python', 'policies',
-                        'recall_intent_lr_pre_v1.json')
+                        'recall_intent_lr_v1.json')
 POLICY_P = os.path.join(ROOT, 'python', 'policies',
-                        'activation_policy_pre_v2.json')
+                        'activation_policy_v2.json')
 TOL = 5e-4          # fixtures store 4-dp floats
 
 

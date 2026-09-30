@@ -1,0 +1,6 @@
+API 路径锁: 宿主 68 条 / 客户端 55 条
+A1 客户端全部命中宿主: OK(缺失 0)
+A2 宿主独有 == 白名单: OK(13 条:/api/dsh-auto-memory/activation-inbox, /api/dsh-auto-memory/subagent-gc, /api/dsh-auto-memory/subagent-probe, /api/dsh-auto-memory/team-attribution, /api/dsh-auto-memory/team-compliance, /api/dsh-auto-memory/team-conflicts, /api/dsh-auto-memory/team-handoffs, /api/dsh-auto-memory/team-members, /api/dsh-auto-memory/team-presence, /api/dsh-auto-memory/team-skills, /api/dsh-auto-memory/team-state, /api/dsh-auto-memory/team-sync-debug, /api/dsh-auto-memory/team-sync-now)
+A3 表外裸字面量: OK(0 处)
+A4 注册键全部在表内: OK(引用 25 个键)
+路径表一致性锁通过(4/4)

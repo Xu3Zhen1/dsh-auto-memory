@@ -1,0 +1,11 @@
+{
+  "asset": "lib/assets/skin/slots/empty.native-document-v1.png",
+  "source": "OpenAI built-in image_gen",
+  "generatedFile": "exec-e310c9ee-ae65-4283-a701-768e84ce63f8.png",
+  "reference": "C55-empty.png",
+  "size": [1448, 1086],
+  "transparent": true,
+  "usage": "empty.library slot; shared native empty states",
+  "prompt": "Create one production UI illustration asset, not a screenshot. Isolate and recreate the central EMPTY DOCUMENT illustration from the supplied C55 reference: one upright pale-blue paper sheet with softly folded top-right corner, three short blue embossed blank line marks, a subtle curled dotted blue trail and two tiny blue accent strokes to the right. Refined native desktop application aesthetic, white and ice-blue with restrained cobalt accents, very soft dimensional paper shading, crisp clean silhouette. Modest flattened oval soft shadow underneath, centered balanced 4:3 composition with generous transparent margins. No words, letters, numbers, readable text, UI elements, windows, buttons, frame, landscape or scenery. Transparent background, true alpha edges; designed to remain legible on white and dark navy surfaces. Faithful to the C55 artwork's quiet simplicity; do not include anything else from the screenshot.",
+  "status": "generated and source-integrated; actual host empty-state screenshot pending"
+}

@@ -20,6 +20,16 @@ function eq (a, b, label) { ok(a === b, label, 'got=' + JSON.stringify(a) + ' wa
 
 /* ── §1 数据表：真 import lib/skin-assets.js ─────────────────────────── */
 const mod = await import('../../lib/skin-assets.js')
+
+/** 平台无关行尾守恒：存在 CRLF 时不得有裸 LF；全 LF 合法（CI/Linux 检出态）。
+ *  ★2026-09-28：原断言写作 cnt(NL)===cnt(CRNL)（即"必须全 CRLF"），在 Linux CI 上必红——
+ *  索引里是 LF，本机 core.autocrlf=true 才检出 CRLF。守的语义不变：文件不得混合行尾。 */
+const damNoMixedEol = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length
+  const lf = (s.match(/\n/g) || []).length
+  if (crlf === 0) return true      // 全 LF：合法（CI 检出态）
+  return crlf === lf               // 有 CRLF 则不得再有裸 LF
+}
 const { SKIN_ASSETS, assetOf, SKIN_ASSET_KEYS, SKIN_ASSET_ROOT } = mod
 const EXPECTED = ['hero.welcome', 'empty.library', 'empty.timeline', 'empty.recall', 'bg.mindmap', 'illust.sync']
 ok(!!SKIN_ASSETS, '§1.1 真 import 拿到 SKIN_ASSETS')
@@ -124,7 +134,7 @@ eq(tabsDef, 1, "§7.1a MEMORY_TABS 定义恰好 1 次")
 eq(tabsAll - tabsDef, 2, "§7.1b ★计数锁：MEMORY_TABS() 真调用数仍为 2")
 eq(tabsAll, 3, "§7.1c 原始子串出现点 = 1 定义 + 2 调用 = 3（登记基线，防口径漂移）")
 ok(!/\r\r\n/.test(cli), '§7.2 client.js 无双 CR（CRLF 纪律）')
-ok(!/(?<!\r)\n/.test(cli), '§7.3 client.js 无裸 LF（纯 CRLF）')
+ok(damNoMixedEol(cli), '§7.3 client.js 无裸 LF（纯 CRLF）')
 ok(!/\r\r\n/.test(idx), '§7.4 index.js 无双 CR')
 a: ok(true, '§7.5 守恒段结束')
 

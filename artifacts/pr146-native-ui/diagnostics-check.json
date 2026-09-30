@@ -1,0 +1,10 @@
+{
+  "checks": [
+    "five real diagnostic sections",
+    "actual host diagnostic fields",
+    "1440 diagnostics no horizontal overflow",
+    "390 diagnostics no horizontal overflow",
+    "no runtime errors"
+  ],
+  "errors": []
+}

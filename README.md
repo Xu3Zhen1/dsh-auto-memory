@@ -1,8 +1,9 @@
-# 无问自忆 · 记忆不断线
+# Ambient Recall · 「潜藏追忆，如影随形」
 
 **dsh-auto-memory** — *She remembers, unbidden.*
 
 > **EN** Now, across windows, too. Context that survives windows, sessions, and tools
+>
 > **中文** 该想起的，自己浮现。跨窗口 · 跨会话 · 跨工具，记忆不断线
 
 <p align="center">
@@ -23,6 +24,8 @@
   <a href="docs/screenshots/promo/promo-6-greeting.png"><img width="130" alt="scheduled greetings" src="docs/screenshots/promo/promo-6-greeting.png"></a>
 </p>
 <p align="center"><sub>Promo gallery · seven frames · click any thumbnail to view full size</sub></p>
+
+
 
 <details>
 <summary><b>Promo gallery, frame by frame</b> (expand and flip through)</summary>
@@ -65,7 +68,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@a9i5k4/dsh-auto-memory"><img alt="npm" src="https://img.shields.io/npm/v/@a9i5k4/dsh-auto-memory"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-BSD--3--Clause-yellow.svg"></a>
-  <img alt="Runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-brightgreen">
+  <a href="https://www.npmjs.com/package/@a9i5k4/dsh-auto-memory"><img alt="npm downloads" src="https://img.shields.io/npm/dt/@a9i5k4/dsh-auto-memory"></a>
   <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
 </p>
 
@@ -82,6 +85,38 @@
   <a href="https://htmlpreview.github.io/?https://github.com/Aik358/dsh-auto-memory/blob/main/docs/CONTRIBUTORS.html">Contributors &amp; Sponsors</a> ·
   <a href="https://qm.qq.com/q/v7Asxn6vPa">QQ group</a>
 </p>
+
+<h3 align="center">
+  <a href="docs/SKIN-GUIDE.md">New UI <code>新款</code></a> &nbsp;·&nbsp; built by
+  <a href="https://github.com/Minervaowl7"><strong>@Minervaowl7</strong></a>
+</h3>
+
+<p align="center">
+  <a href="docs/skin-figures/skin-theme-compare.gif"><img width="720" alt="dark and light theme slider preview" src="docs/skin-figures/skin-theme-compare.gif"></a>
+</p>
+<p align="center"><sub>
+Dark ⇄ Light slider preview · auto-playing loop (GitHub READMEs can't run a real drag widget) —
+in the app, switch <strong>Dark / Light / Follow system</strong> from the panel header.
+</sub></p>
+
+<p align="center">
+  <img width="172" alt="memory library" src="docs/skin-figures/skin-library-zh.png">
+  &nbsp;<img width="172" alt="settings" src="docs/skin-figures/skin-settings-zh.png">
+  &nbsp;<img width="172" alt="focus view" src="docs/skin-figures/skin-tour-zh.png">
+  &nbsp;<img width="172" alt="compact layout" src="docs/skin-figures/skin-compact-zh.png">
+</p>
+
+<p align="center"><sub>
+A reference-style memory workbench: nine-page navigation, list &amp; detail views,
+four settings groups, focus view, dark mode and narrow-screen layouts.
+Switch to it from the memory panel header button — the classic skin is untouched
+and always one click away. All 24 real-host screenshots live in the
+<a href="docs/SKIN-GUIDE.md"><strong>Skin guide</strong></a>.
+</sub></p>
+
+> [!NOTE]
+> **🧭 Getting ready for the official long-term memory**
+> Adaptation and pre-research for DeepSeek Harness's official long-term memory system are underway — when it ships, this plugin will offer **semantic recall** and **cross-window continuation** for official memories from day one. Everything here is a toggle: with ample stability and flexibility built in, the plugin will auto-adapt to and flexibly complement the official memory stack. Your memory stays seamless — no migration needed.
 
 ---
 
@@ -638,7 +673,7 @@ Papers were authored by the autonomous engineering agent (ZCode / GLM); all conc
 
 Community contributors:
 
-- [@Minervaowl7](https://github.com/Minervaowl7) — the most prolific contributor: 15 PRs + 8 issues covering workspace-overview log-date anchoring, auto-continuation host hardening, and recovery-candidate lifecycle ([#16](https://github.com/Aik358/dsh-auto-memory/issues/16)–[#53](https://github.com/Aik358/dsh-auto-memory/pull/53))
+- [@Minervaowl7](https://github.com/Minervaowl7) — **responsible for the complete development of the new frontend (the dev-preview UI)**: a reference-style memory workbench (nine-page navigation, list & detail, four settings groups, focus view, dark mode, narrow-screen), integrated through a generator that derives new skin variants from the classic components and fails loudly on structural drift ([PR #146](https://github.com/Aik358/dsh-auto-memory/pull/146)). Also the most prolific contributor overall: 51 PRs + 57 issues covering workspace-overview log-date anchoring, auto-continuation host hardening, semantic-index self-healing, the python download chain and recovery-candidate lifecycle ([#16](https://github.com/Aik358/dsh-auto-memory/issues/16)–[#146](https://github.com/Aik358/dsh-auto-memory/pull/146))
 - [@JIE42393](https://github.com/JIE42393) — 7 issues on panel behaviour, recall quality and configuration edge cases ([#15](https://github.com/Aik358/dsh-auto-memory/issues/15), [#26](https://github.com/Aik358/dsh-auto-memory/issues/26), [#30](https://github.com/Aik358/dsh-auto-memory/issues/30), [#41](https://github.com/Aik358/dsh-auto-memory/issues/41)–[#43](https://github.com/Aik358/dsh-auto-memory/issues/43), [#45](https://github.com/Aik358/dsh-auto-memory/issues/45))
 - [@Fishsb](https://github.com/Fishsb) — 3 issues on memory recall and injection behaviour ([#18](https://github.com/Aik358/dsh-auto-memory/issues/18)–[#20](https://github.com/Aik358/dsh-auto-memory/issues/20))
 - [@messiahyl](https://github.com/messiahyl) — 2 issues ([#8](https://github.com/Aik358/dsh-auto-memory/issues/8), [#9](https://github.com/Aik358/dsh-auto-memory/issues/9))
@@ -667,8 +702,10 @@ Infrastructure and API-quota sponsors are listed on the **[Contributors & Sponso
 This project is built human-machine collaboratively. In addition to engineering and community contributions above:
 
 - **Aik358** — project owner: product direction, architecture, and engineering.
+- **[@Minervaowl7](https://github.com/Minervaowl7)** — **author of the new frontend (the skin system)**: independently built the complete new UI — a nine-page workbench, list/detail views, four settings groups, focus view, dark-mode adaptation and narrow-screen layouts. **This is the starting point and foundation of the plugin's skin system**: by integrating through a generator that derives new skin variants from the classic components, later contributors can keep re-skinning on top of it while the classic skin stays byte-for-byte unchanged. Also the project's most prolific community developer (51 PRs · 57 issues).
 - **ZCode (GLM, Z.ai)** — autonomous engineering agent: M-series semantic-engine implementation, benchmark research papers ([M7-RESEARCH-PAPER](docs/M7-RESEARCH-PAPER.md) / [Activation v2 report](docs/M7-ACTIVATION-V2-PAPER.md)), regression suites, and the landing-page design/build.
 - **Kimi K3 (Moonshot AI)** — frontend agent: contributed to the v0.1.30 welcome-tour interface assets and visual QA.
+- **DeepSeek Harness (DeepSeek V4)** — **the self-iteration environment and collaborator of this project**: most of the features contributed by the community author and the agents above were **grown inside DeepSeek Harness, self-evolving together with DeepSeek V4** — spotting a problem, locating the root cause, writing the patch, running the regression suite and opening the PR all happened within the same set of Harness sessions. This is itself an instance of a **harness iterating on, and developing, itself**: the project is used by humans and AI while it makes itself better in the very same environment. The plugin's own context-management capabilities (handoff ledgers / whiteboard / watermark sensing / auto-continuation) grew out of exactly this need — supporting long-running, cross-session self-iteration.
 
 AI agents are credited as authors of the research papers and parts of the implementation, under human review and direction.
 

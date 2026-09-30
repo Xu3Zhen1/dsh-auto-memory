@@ -1,0 +1,223 @@
+{
+  "checks": [
+    "Real host writes isolated from personal memory",
+    "Skin mounted through actual conversation.view",
+    "Inner scroller ends above host composer",
+    "Real page home renders",
+    "Real page library renders",
+    "Real page handoff renders",
+    "Real page calendar renders",
+    "Real page skills renders",
+    "Real page recall renders",
+    "Real page mindmap renders",
+    "Real page storage renders",
+    "Real page settings renders",
+    "Engine radio writes immediately, single config key",
+    "Engine radio is outside dirty drafts",
+    "Actual draft save only writes changed preference",
+    "Failed write retains browser draft",
+    "Cancel restores saved browser value",
+    "WAI-APG settings tab keyboard navigation",
+    "Append note uses real note endpoint",
+    "Memory search uses real recall with requested limit",
+    "Calendar add round-trip renders saved event",
+    "Calendar completion persisted on host",
+    "Confirmed calendar deletion persisted",
+    "A/P/S/H/E feedback accepted by actual host",
+    "Feedback is readable from review queue",
+    "Focus mode expands inside real host",
+    "Skin follows host dark-theme attribute",
+    "Home 768 no horizontal overflow",
+    "Settings 768 no horizontal overflow",
+    "Narrow nav moves focus to close",
+    "Narrow nav restores focus",
+    "Home 390 no horizontal overflow",
+    "Settings 390 no horizontal overflow",
+    "Narrow nav moves focus to close",
+    "Narrow nav restores focus",
+    "Classic switch removes new skin and injected stylesheet",
+    "No uncaught page errors"
+  ],
+  "errors": [],
+  "posts": [
+    {
+      "path": "/api/dsh-auto-memory/workbench",
+      "body": {}
+    },
+    {
+      "path": "/api/dsh-auto-memory/workbench",
+      "body": {}
+    },
+    {
+      "path": "/api/dsh-auto-memory/config",
+      "body": {
+        "semanticEngineMode": "auto",
+        "jsDecideCooldownRounds": 1
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/workspaces",
+      "body": {
+        "force": false
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/greet",
+      "body": {
+        "ws": "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\workspace"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/workspaces",
+      "body": {
+        "force": false
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/greet",
+      "body": {
+        "ws": "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\workspace"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/workspaces",
+      "body": {
+        "force": false
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/recall",
+      "body": {}
+    },
+    {
+      "path": "/api/dsh-auto-memory/summarize",
+      "body": {}
+    },
+    {
+      "path": "/api/dsh-auto-memory/greet",
+      "body": {}
+    },
+    {
+      "path": "/api/dsh-auto-memory/workspaces",
+      "body": {}
+    },
+    {
+      "path": "/api/dsh-auto-memory/reflect-auto",
+      "body": {}
+    },
+    {
+      "path": "/api/dsh-auto-memory/config",
+      "body": {
+        "semanticEngineMode": "lexical"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/config",
+      "body": {
+        "jsDecideCooldownRounds": 4
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/config",
+      "body": {
+        "jsDecideCooldownRounds": 8
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/note",
+      "body": {
+        "content": "Iter5 隔离验收笔记：验证真实追加写入，不含个人数据。记录时刻 2026-09-28T14:33:23.978Z"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/recall",
+      "body": {
+        "query": "隔离验收",
+        "limit": 8
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/calendar",
+      "body": {
+        "date": "2026-09-28",
+        "time": "09:00",
+        "quadrant": "重要不紧急",
+        "title": "日程联调 · 1790606005415",
+        "note": "地点: 隔离验收环境"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/calendar",
+      "body": {
+        "action": "done",
+        "date": "2026-09-28",
+        "time": "09:00",
+        "title": "日程联调 · 1790606005415"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/calendar",
+      "body": {
+        "action": "remove",
+        "date": "2026-09-28",
+        "time": "09:00",
+        "title": "日程联调 · 1790606005415"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/review-feedback",
+      "body": {
+        "observationId": "obs_iter5qa_0",
+        "choice": "A"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/workspaces",
+      "body": {
+        "force": false
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/greet",
+      "body": {
+        "ws": "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\workspace"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/workspaces",
+      "body": {
+        "force": false
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/greet",
+      "body": {
+        "ws": "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\workspace"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/workspaces",
+      "body": {
+        "force": false
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/greet",
+      "body": {
+        "ws": "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\workspace"
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/workspaces",
+      "body": {
+        "force": false
+      }
+    },
+    {
+      "path": "/api/dsh-auto-memory/greet",
+      "body": {
+        "ws": "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\workspace"
+      }
+    }
+  ]
+}

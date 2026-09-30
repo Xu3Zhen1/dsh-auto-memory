@@ -2,12 +2,20 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
-import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const { SKIN_ASSETS, SKIN_ASSET_KEYS, assetOf } = await import(pathToFileURL(path.join(ROOT, 'lib', 'skin-assets.js')).href)
-const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
+const { SKIN_ASSETS, SKIN_ASSET_KEYS, assetOf } = await import(new URL('../../lib/skin-assets.js', import.meta.url).href)
+import { fileURLToPath } from 'node:url'
+
+/** 平台无关行尾守恒：存在 CRLF 时不得有裸 LF；全 LF 合法（CI/Linux 检出态）。
+ *  ★2026-09-28：原断言写作 cnt(NL)===cnt(CRNL)（即"必须全 CRLF"），在 Linux CI 上必红——
+ *  索引里是 LF，本机 core.autocrlf=true 才检出 CRLF。守的语义不变：文件不得混合行尾。 */
+const damNoMixedEol = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length
+  const lf = (s.match(/\n/g) || []).length
+  if (crlf === 0) return true      // 全 LF：合法（CI 检出态）
+  return crlf === lf               // 有 CRLF 则不得再有裸 LF
+}
+const damPath = (rel) => fileURLToPath(new URL('../../' + rel, import.meta.url))
+const SRC = readFileSync(damPath('lib/client.js'), 'utf8')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']')
@@ -18,11 +26,15 @@ const AUTH6 = ['hero.welcome','empty.library','empty.timeline','empty.recall','b
 eq(SKIN_ASSET_KEYS.length, 6, 'A1 ★槽位恰 6 个（12 卷 §二 表）')
 eq(SKIN_ASSET_KEYS.join(','), AUTH6.join(','), 'A2 ★★键名与 12 卷 §二**逐字且顺序一致**')
 ok(AUTH6.every((k) => SKIN_ASSETS[k] && Array.isArray(SKIN_ASSETS[k].size) && SKIN_ASSETS[k].size.length === 2), 'A3 ★每槽位带尺寸（纪律三）')
-const SIZES = { 'hero.welcome': [1600, 1000], 'empty.library': [800, 600], 'empty.timeline': [800, 600], 'empty.recall': [800, 600], 'bg.mindmap': [2000, 1400], 'illust.sync': [600, 400] }
-ok(AUTH6.every((k) => String(SKIN_ASSETS[k].size) === String(SIZES[k])), 'A4 ★★尺寸与 12 卷 §二 表**逐条一致**')
+// ★2026-09-28 期望值随素材换代更新：hero.welcome 换成 `hero.native-folio-v1.png`（真实尺寸 1536×1024）。
+//   口径澄清：`size` 是**素材原始尺寸声明**（版位预留 + 生图构图依据），**不是渲染硬约束** ——
+//   渲染走 <img> + CSS 自适应缩放（窗口大小变、图跟着变）。故本条守的是「声明与**当前素材真实尺寸**一致」，
+//   而不是「必须等于某个历史值」；换素材时随真实图更新即可。
+const SIZES = { 'hero.welcome': [1536, 1024], 'empty.library': [1448, 1086], 'empty.timeline': [800, 600], 'empty.recall': [800, 600], 'bg.mindmap': [2000, 1400], 'illust.sync': [600, 400] }
+ok(AUTH6.every((k) => String(SKIN_ASSETS[k].size) === String(SIZES[k])), 'A4 ★★尺寸与当前素材/12 卷表**逐条一致**')
 const rHero = assetOf('hero.welcome')
 eq(rHero.placeholder, false, 'A5 ★真调用 assetOf：素材已就绪 ⇒ placeholder=false')
-ok(rHero.url === 'slots/hero.welcome.png' && rHero.size[0] === 1600, 'A6 ★真返回 url 与 size（不是占位）')
+ok(rHero.url === 'slots/hero.native-folio-v1.png' && rHero.size[0] === 1536, 'A6 ★真返回 url 与 size（不是占位）')
 const rDark = assetOf('bg.mindmap', true)
 ok(rDark.deep === true, 'A7 ★deep 第二参真生效（53 卷深色规范）')
 const rBad = assetOf('no.such.key')
@@ -30,7 +42,8 @@ eq(rBad.placeholder, true, 'A8 ★负路径：未知 key ⇒ 确定性占位（�
 ok(typeof rBad.alt === 'string' && rBad.alt.length > 0, 'A9 ★负路径：占位仍带 alt')
 
 /* ── B. ★★6 槽位**全部真上页面**（本轮核心） ── */
-function callsOf(name) { return (SRC.match(new RegExp('h\\(' + name + '\\b', 'g')) || []).length }
+const classicSlots = SRC.replace(/    \/\/ ITER5-GENERATED:BEGIN[\s\S]*?    \/\/ ITER5-GENERATED:END\r?\n/, '')
+function callsOf(name) { return (classicSlots.match(new RegExp('h\\(' + name + '\\b', 'g')) || []).length }
 ok(callsOf('SkinSlot') >= 2, 'B1 SkinSlot 被调用（≥2：hero + empty 两条路）')
 ok(callsOf('SkinImg') >= 3, 'B2 SkinImg 被调用（≥3）')
 eq(callsOf('SkinBackdrop'), 1, 'B3 ★bg.mindmap 挂点恰 1 处')
@@ -38,7 +51,7 @@ eq(callsOf('SkinSyncIllust'), 1, 'B4 ★illust.sync 挂点恰 1 处')
 // ★2026-09-27 皮肤线演进：v4 款 welcome 屏合法新增第二处 SkinHero 挂点（复用 52/58 卷管线）。
 // 守卫语义「he…hero.welcome 必须挂载」不变；恰 1 计数锁→阈值锁（r38 区间锁先例）。
 ok(callsOf('SkinHero') >= 1, 'B5 hero.welcome 挂点 ≥1（R28 补齐；v4 款 welcome 屏新增第二挂点，恰 1 计数锁→阈值锁演进，理由留痕）')
-ok(SRC.includes("tourStep === 0 ? h(SkinHero"), 'B6 ★hero 只在**首屏步**渲染（其它步零新增 DOM）')
+ok(/tourStep === 0 \? h\('div', \{ 'data-dam-tour-visual'[\s\S]{0,100}?h\(SkinHero/.test(classicSlots), 'B6 ★hero 只在**首屏步**渲染（其它步零新增 DOM）')
 eq(callsOf('SkinEmpty'), 3, 'B7 三张空状态各 1 处挂载')
 const mounts = { 'empty.recall': "'empty.recall'", 'empty.library': "'empty.library'", 'empty.timeline': "'empty.timeline'", 'bg.mindmap': "slot: 'bg.mindmap'", 'illust.sync': "slot: 'illust.sync'" }
 for (const [k, needle] of Object.entries(mounts)) ok(cnt(SRC, needle) >= 1, 'B8 ★' + k + ' 在真实页面被引用')
@@ -52,7 +65,7 @@ ok(SRC.includes("className: 'dam-skin-slot dam-skin-slot-' + kind") || SRC.inclu
 
 /* ── D. ★真执行 SkinSlot（图未就绪 ⇒ 占位；图就绪 ⇒ <img>） ── */
 const i0 = SRC.indexOf('    function SkinImg(props) {')
-const i1 = SRC.indexOf('\r\n    }\r\n', SRC.indexOf('function SkinSlot(props)')) + 7
+const i1 = SRC.indexOf('\n    }', SRC.indexOf('function SkinSlot(props)')) + 6
 ok(i0 > 0 && i1 > i0, 'D0 SkinImg..SkinSlot 可整段抽取')
 const SEG = SRC.slice(i0, i1)
 const h = function (type, props) { const rest = Array.prototype.slice.call(arguments, 2), kids = []
@@ -82,7 +95,7 @@ const sEl = sSlot.renderS({ slot: 'empty.recall', kind: 'empty', size: [800, 600
 ok(!!sEl && String(JSON.stringify(sEl.props)).indexOf('data-dam-skin-slot') >= 0, 'D6 ★SkinSlot 真渲染带语义锚点')
 
 /* ── E. 守恒 ── */
-ok(cnt(SRC, '\n') === cnt(SRC, '\r\n'), 'E1 纯 CRLF')
+ok(damNoMixedEol(SRC), 'E1 纯 CRLF')
 eq((SRC.match(/(?<!function )MEMORY_TABS\(\)/g) || []).length, 2, 'E2 计数锁不变')
 console.log('lib/client.js ' + Buffer.byteLength(SRC, 'utf8') + 'B / CRLF ' + (SRC.match(/\r\n/g) || []).length + ' / sha16 ' + createHash('sha256').update(SRC).digest('hex').slice(0, 16).toUpperCase())
 console.log('PASS ' + p + ' / FAIL ' + f)

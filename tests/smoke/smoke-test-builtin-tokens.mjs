@@ -5,6 +5,16 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
+/** 平台无关行尾守恒：存在 CRLF 时不得有裸 LF；全 LF 合法（CI/Linux 检出态）。
+ *  ★2026-09-28：原断言写作 cnt(NL)===cnt(CRNL)（即"必须全 CRLF"），在 Linux CI 上必红——
+ *  索引里是 LF，本机 core.autocrlf=true 才检出 CRLF。守的语义不变：文件不得混合行尾。 */
+const damNoMixedEol = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length
+  const lf = (s.match(/\n/g) || []).length
+  if (crlf === 0) return true      // 全 LF：合法（CI 检出态）
+  return crlf === lf               // 有 CRLF 则不得再有裸 LF
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SRC = join(__dirname, '..', '..', 'lib', 'client.js')
 
@@ -74,7 +84,7 @@ ok('§4b 正路径对照：未删时该 token 不红', ![...refs].filter(([tk, f
 // ── §5 可复算物理量 ───────────────────────────────────────
 // ★物理量断言必须锚定【不变量】而非快照：快照每轮都会变（会导致测试变成伪红）
 console.log('  · 实测字节数 = ' + Buffer.byteLength(raw, 'utf8') + '（快照，不作断言）')
-ok('§5.2 裸 LF = 0', !/(^|[^\r])\n/.test(raw))
+ok('§5.2 裸 LF = 0', damNoMixedEol(raw))
 const crlf = (raw.match(/\r\n/g) || []).length
 console.log('  · 实测 CRLF 行数 = ' + crlf + '（快照，不作断言）')
 ok('§5.3 行数守恒：split(CRLF) 段数 = CRLF 数 + 1', raw.split('\r\n').length === crlf + 1)

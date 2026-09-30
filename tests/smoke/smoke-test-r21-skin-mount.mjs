@@ -7,6 +7,16 @@ import { createHash } from 'node:crypto'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+
+/** 平台无关行尾守恒：存在 CRLF 时不得有裸 LF；全 LF 合法（CI/Linux 检出态）。
+ *  ★2026-09-28：原断言写作 cnt(NL)===cnt(CRNL)（即"必须全 CRLF"），在 Linux CI 上必红——
+ *  索引里是 LF，本机 core.autocrlf=true 才检出 CRLF。守的语义不变：文件不得混合行尾。 */
+const damNoMixedEol = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length
+  const lf = (s.match(/\n/g) || []).length
+  if (crlf === 0) return true      // 全 LF：合法（CI 检出态）
+  return crlf === lf               // 有 CRLF 则不得再有裸 LF
+}
 const HERE = dirname(fileURLToPath(import.meta.url)), ROOT = join(HERE, '..', '..');
 let pass = 0, fail = 0; const fails = [];
 const ok = (c, m) => { if (c) pass++; else { fail++; fails.push(m) } };
@@ -38,9 +48,11 @@ ok(!/'data-dam-kind'/.test(SEG), 'A7 ★挂载点零 kind 锚');
 // 守恒
 eq((SRC.match(/(?<!function )MEMORY_TABS\(\)/g) || []).length, 2, 'A8 ★计数锁 MEMORY_TABS() = 2');
 ok(cnt(SRC, 'data-dam-region') >= 18, 'A9 结构锚不降');
-ok(cnt(SRC, '\n') === cnt(SRC, '\r\n'), 'A10 纯 CRLF');
+ok(damNoMixedEol(SRC), 'A10 纯 CRLF');
 // 三处挂载点 + 原文案
-eq(cnt(SRC, 'h(SkinEmpty,'), 3, 'A11 ★三处真实挂载（refine / hub-skills / stats）');
+const legacySource = SRC.replace(/    \/\/ ITER5-GENERATED:BEGIN[\s\S]*?    \/\/ ITER5-GENERATED:END/, '');
+eq(cnt(legacySource, 'h(SkinEmpty,'), 3, 'A11 三处经典挂载仍保留（refine / hub-skills / stats）');
+eq(cnt(SRC, 'h(SkinEmpty,') - cnt(legacySource, 'h(SkinEmpty,'), 1, 'A11b 原生统计复用相同空态槽位');
 ok(['refineEmpty', 'hubSkillsEmpty', 'statsEmpty'].every((k) => cnt(SRC, "t('" + k + "')") >= 1), 'A12 ★原文案全保留（图是追加，不是替换）');
 ok(SRC.includes('h(SkinHero,') || SRC.includes('function SkinHero'), 'A13 hero 首屏挂载表达存在');
 // ★段标记唯一性（R22 实测抓到 R21 遗留：end 标记被复制成 2 处）

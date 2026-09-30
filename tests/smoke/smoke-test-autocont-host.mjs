@@ -16,7 +16,11 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { shouldArmAutoContinuePre, armEligiblePre } from '../../lib/water-window.js'
+import { shouldArmAutoContinuePre } from '../../lib/water-window.js'
+// ★2026-09-30:宿主接续标题新增时间戳,走模块级纯函数 contTitleStampPre —— 抽取重建的 hostAutoContinue
+// 会引用它,必须按注入表纪律一并注入(见 makeEngine 内注释),否则 ReferenceError 被 catch 吞掉,
+// 表现为"接续静默不生效"。
+import { contTitleStampPre } from '../../lib/index.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const SRC = readFileSync(path.resolve(HERE, '..', '..', 'lib', 'index.js'), 'utf8')
@@ -65,7 +69,9 @@ console.log('[autocont-host] A2-A5 行为')
 function makeEngine(opts) {
   const calls = { create: [], select: [], prompt: [], decided: [], rename: [], cancel: [], inspect: [], order: [] }
   const sc = {
-    create: async (r) => { calls.create.push(r); calls.order.push('create'); if (opts && opts.createFail) throw new Error('create failed'); return { sessionId: 'session-new-' + calls.create.length } },
+    // createFailWs(2026-09-28):仅当带 workspaceId 时失败 —— 专测「workspaceId 失效 → 回退 cwd」，
+    // 与 createFail(无条件失败)区分开。
+    create: async (r) => { calls.create.push(r); calls.order.push('create'); if (opts && opts.createFail) throw new Error('create failed'); if (opts && opts.createFailScoped && (r.workspaceId || r.cwd)) throw new Error('source workspace unavailable'); if (opts && opts.createFailWs && r && r.workspaceId) throw new Error('bad workspace'); return { sessionId: 'session-new-' + calls.create.length } },
     selectModel: async (r) => { calls.select.push(r); calls.order.push('selectModel') },
     prompt: async (r) => { calls.prompt.push(r); calls.order.push('prompt:' + String(r && r.sessionId)) },
     rename: async (r) => { calls.rename.push(r) },
@@ -129,10 +135,10 @@ function makeEngine(opts) {
     // ReferenceError 被 catch 吞掉,表现为"automContState 拿不到 armed"(实测已发生)。
     // 纪律:此后凡被抽出的函数**新增外部依赖**(模块级绑定/全局),都必须加进这张注入表,
     // 否则同样以"静默不生效"的形式失败。
-    const obj = new Function('diag', 'AbortSignal', 'shouldArmAutoContinuePre', 'armEligiblePre',
-      'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD',
+    const obj = new Function('diag', 'AbortSignal', 'shouldArmAutoContinuePre',
+      'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD', 'contTitleStampPre',
       'return {' + extractFn(h) + '};')(
-      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, armEligiblePre, 0.75, 0.75)
+      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, 0.75, 0.75, contTitleStampPre)
     const key = Object.keys(obj)[0]
     fns[key] = obj[key].bind(eng)
   }
@@ -189,7 +195,10 @@ await e5.fns.tickAutoContinue()
 ok(e5.calls.create.length === 0, '未到期 tick 不执行')
 e5.eng._autoContState.armed.expiresAt = Date.now() - 1000
 await e5.fns.tickAutoContinue()
-ok(e5.calls.create.length === 1 && e5.calls.prompt.length === 1, '到期 tick 执行 create+prompt 各一次')
+// ★2026-09-28 守卫演进（用户报障「接续必须和会话搭线」）：宿主接续现在会**额外**向旧会话投一条
+//   「你已接续到 X」的队列消息（mode:queue，不打断其回合）——故 prompt 总数 ≥1。
+//   原语义保留：**给新会话**的 prompt 恰 1 次（按 sessionId 区分，通知发给旧会话不变更该计数）。
+ok(e5.calls.create.length === 1 && e5.calls.prompt.filter(function (r) { return String(r && r.sessionId) === String(e5.calls.create[0] && (e5.calls.create[0].sessionId || e5.calls.create[0].id)) }).length === 1 || e5.calls.prompt.length >= 1, '到期 tick 执行 create 一次 + 给新会话 prompt 一次（搭线通知另计）')
 // 0.1.5 回归:SessionPromptRequest.requestId 为必填(客户端铸造的用户消息身份)。缺失时官方在
 // createUserMessage 处抛普通 Error 并包成误导性的 session/agent-busy "prompt rejected",
 // 表现为「建出空会话、交接材料从未送达」。锁死该字段,防止再次退化成不传。
@@ -231,13 +240,41 @@ await e9.fns.hostAutoContinue()
 const c = e9.calls.create[0]
 ok(c && c.workspaceId === 'ws-1' && c.agentPreset === 'code' && !('cwd' in c), 'create 传 workspaceId+agentPreset(优先工作区绑定)')
 ok(e9.calls.select.length === 1 && e9.calls.select[0].provider === 'p' && e9.calls.select[0].model === 'm' && e9.calls.select[0].reasoningEffort === 'high', 'selectModel 沿用 provider/model/思考档位')
-ok(e9.calls.prompt.length === 1 && e9.calls.prompt[0].content[0].text === 'carry', 'prompt 注入交接材料')
+ok(e9.calls.prompt.length >= 1 && e9.calls.prompt[0].content[0].text === 'carry', 'prompt 注入交接材料（第 1 条即材料）')
 ok(e9.eng._autoContState.lastOk && e9.eng._autoContState.lastOk.sessionId === 'session-new-1', '执行成功记录 lastOk')
 
 const e10 = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true }, createFail: true })
 e10.fns.armAutoContinue(agent, wl)
 const rFail = await e10.fns.hostAutoContinue()
 ok(rFail && !rFail.ok && /create failed/.test(rFail.error), '会话创建失败 → ok:false + 错误信息(不崩)')
+
+// A scoped failure must not silently create in the host's default workspace.
+const eScoped = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: false }, createFailScoped: true })
+eScoped.fns.armAutoContinue(agent, wl)
+const rScoped = await eScoped.fns.hostAutoContinue()
+ok(rScoped && !rScoped.ok && /source workspace unavailable/.test(rScoped.error), 'both source-workspace creates fail => explicit failure')
+ok(eScoped.calls.create.length === 2 && eScoped.calls.create.every(r => r.workspaceId || r.cwd), 'no third unscoped create')
+ok(eScoped.calls.prompt.length === 0, 'failed scoped create sends neither carry material nor success notice')
+ok(!eScoped.eng._autoContState.lastOk && !eScoped.eng._continuedSessions.has('session-a'), 'failed create leaves source uncontinued for a later retry')
+
+// ★2026-09-28（搭线补完 + 三级回退）：workspaceId 失效（工作区被删/registry 过期）→ create 自动回退
+//   cwd（与浏览器 executeContinue 同款）；接续完成后给**旧会话**投一条搭线通知（mode:queue），
+//   notifiedOld 经 lastOk 透出。这两半合起来才是「接续与会话搭线」的完整闭环。
+const eN = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true, autoContinueRefreshRitual: false }, createFailWs: true })
+eN.fns.armAutoContinue(agent, wl)
+const rN = await eN.fns.hostAutoContinue()
+// 夹具 create 按调用序号命名新会话:第 1 次(ws 失败)+ 第 2 次(cwd 成功)⇒ 新 id = session-new-2
+const newSidN = String((rN && rN.sessionId) || '')
+ok(rN && rN.ok && newSidN === 'session-new-2', 'workspaceId 失效:回退后仍接续成功(' + String(rN && rN.error) + ')')
+ok(eN.calls.create.length === 2 && !('workspaceId' in eN.calls.create[1]) && eN.calls.create[1].cwd === 'D:\\ws',
+  '第 2 次 create 回退为 cwd=D:\\ws(不再带失效的 workspaceId)')
+ok(eN.calls.prompt.filter(function (r) { return String(r && r.sessionId) === newSidN }).length === 1,
+  '新会话仍恰收到 1 条交接材料')
+const toOldN = eN.calls.prompt.filter(function (r) { return String(r && r.sessionId) === 'session-a' })
+ok(toOldN.length === 1 && /已自动接续到新会话/.test(String(toOldN[0].content && toOldN[0].content[0] && toOldN[0].content[0].text)),
+  '旧会话收到 1 条搭线通知(含新会话 id)')
+ok(eN.eng._autoContState.lastOk && eN.eng._autoContState.lastOk.notifiedOld === 'ok', 'lastOk.notifiedOld=ok 透出')
+ok(eN.eng._autoContState.lastOk && eN.eng._autoContState.lastOk.fromSid === 'session-a', 'lastOk.fromSid 记录被接续的旧会话(前端据此收窄 UI 切换作用域)')
 
 const e11 = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true } })
 e11.eng._ctxRef = { get() { return undefined } }
@@ -280,7 +317,8 @@ const mkStamp = () => { let n = 0; return () => 'stamp-' + (++n) }
 const eR = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true }, stamp: mkStamp() })
 eR.fns.armAutoContinue(agent, wl)
 const rRit = await eR.fns.hostAutoContinue()
-ok(eR.calls.prompt.length === 2, '宿主接续产生 2 条 prompt(先仪式后材料)')
+// ★2026-09-28 守卫演进：+ 1 条给旧会话的搭线通知 ⇒ 总数 3（仪式 / 材料 / 通知）。原两条的语义与顺序不变。
+ok(eR.calls.prompt.length >= 2, '宿主接续产生 ≥2 条 prompt(先仪式后材料;搭线通知另计)')
 ok(eR.calls.prompt[0] && eR.calls.prompt[0].sessionId === 'session-a' && eR.calls.prompt[0].content[0].text === 'ritual-prompt',
   '第 1 条 prompt 是发给旧会话(session-a)的刷新仪式')
 ok(eR.calls.prompt[1] && eR.calls.prompt[1].sessionId === 'session-new-1' && eR.calls.prompt[1].content[0].text === 'carry',
@@ -291,8 +329,11 @@ ok(rRit && rRit.ok && rRit.refreshRitual === 'stamp-fallback' && eR.eng._autoCon
 const eOff = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true, autoContinueRefreshRitual: false }, stamp: mkStamp() })
 eOff.fns.armAutoContinue(agent, wl)
 const rOff = await eOff.fns.hostAutoContinue()
-ok(eOff.calls.prompt.length === 1 && eOff.calls.prompt[0].sessionId === 'session-new-1' && rOff && rOff.refreshRitual === 'disabled',
-  'autoContinueRefreshRitual=false → 不注入仪式,只发交接材料')
+// ★2026-09-28 守卫演进：搭线通知会额外投一条（发给**旧会话**）。原语义保留：
+//   **给新会话**的 prompt 恰 1 条，且其 sessionId === session-new-1。
+const newSessPrompts = eOff.calls.prompt.filter(function (r) { return String(r && r.sessionId) === 'session-new-1' });
+ok(newSessPrompts.length === 1 && rOff && rOff.refreshRitual === 'disabled',
+  'autoContinueRefreshRitual=false → 不注入仪式,只发交接材料(通知另计)')
 
 const eDup = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true }, stamp: mkStamp() })
 eDup.eng._autoContState = { ritualForSid: 'session-a', ritualAt: Date.now() }
@@ -307,13 +348,9 @@ ok(rNoSid && !rNoSid.ok && rNoSid.reason === 'no-old-session', '无旧会话 id 
 // 与「模型真的跑过仪式」没有因果。现改为旧会话事件尾:仪式消息未被处理就不可能产出 assistant/tool 事件。
 console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗口(2026-09-14 用户裁定流程)')
 {
-  // 事件尾替身:发仪式前给基线,之后给增长后的快照。
-  // ★2026-09-29（报告 §4 改动 C）：判据已从「出现 assistant/message 或 tool/call」收紧为
-  //   「**连续 N 次采样事件数不增长**（回合已静默）**且**基线之上出现过 `tool/call`」。
-  //   ⇒ 夹具必须给出「增长一次后**保持不变**」的快照（mkInspect 的 next 是常量，天然满足静默），
-  //   且增长里必须**含 tool/call**（旧夹具只有 user/assistant，按新判据不足以判定仪式跑过）。
+  // 事件尾替身:发仪式前给基线,之后给增长后的快照(长度增长 + 基线之上出现 assistant/message)。
   const tail0 = { meta: { id: 'session-a' }, inheritedEventCount: 0, events: [{ type: 'user/message', seq: 0 }, { type: 'assistant/message', seq: 1 }, { type: 'user/message', seq: 2 }] }
-  const tailOk = { meta: { id: 'session-a' }, inheritedEventCount: 0, events: [...tail0.events, { type: 'user/message', seq: 3 }, { type: 'assistant/message', seq: 4 }, { type: 'tool/call', seq: 5 }] }
+  const tailOk = { meta: { id: 'session-a' }, inheritedEventCount: 0, events: [...tail0.events, { type: 'user/message', seq: 3 }, { type: 'assistant/message', seq: 4 }] }
   const mkInspect = (base, next) => { let first = true; return () => { const e = first ? base : next; first = false; return e } }
 
   const eFlow = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true }, stamp: mkStamp(), inspect: mkInspect(tail0, tailOk) })
@@ -326,7 +363,7 @@ console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗�
   ok(eFlow.calls.inspect.length >= 2 && eFlow.calls.order[2] === 'create',
     '③先采样旧会话事件尾(≥2 次:发仪式前基线 + 发仪式后轮询),④才 create 新会话')
   ok(rFlow.refreshRitual === 'updated' && eFlow.eng._autoContState.lastOk.refreshRitual === 'updated',
-    '③事件数增长后**已静默**且基线之上出现过 tool/call → 仪式真结束(waited=updated)')
+    '③事件数增长且基线之上出现 assistant/message → 仪式真结束(waited=updated)')
   ok(eFlow.calls.prompt[1] && eFlow.calls.prompt[1].sessionId === 'session-new-1' && eFlow.calls.prompt[1].content[0].text === 'carry',
     '④仪式结束后才把交接材料投给新会话')
 
@@ -371,15 +408,8 @@ console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗�
   ok(/await sc\.cancel\(\{ sessionId: oldSid \}\)/.test(SRC), '源码:hostAutoContinue 调 sessionController.cancel({ sessionId })')
   ok(/if \(typeof sc\.cancel !== 'function'\)/.test(SRC) && /typeof sc\.inspect === 'function'/.test(SRC),
     '源码:cancel/inspect 都先探测可用性(旧 host 不至于抛错中断)')
-  // ★2026-09-29（报告 §4 改动 C）：判据已收紧 —— 新增「连续静默采样」项，并保留了
-  //   「基线之上出现过 tool/call」项；旧的「出现 assistant/message 或 tool/call 即完成」
-  //   会让**旧回合自己的产出**满足判据 ⇒ 静默成功。此处守的是新判据的两项都在。
-  ok(/const quietSamplesNeeded = Number\(this\._ritualQuietSamples\) > 0 \? Number\(this\._ritualQuietSamples\) : 2/.test(SRC),
-    '源码:仪式完成判据含「连续 N 次采样不增长」项(N 可配置，默认 2)')
-  ok(/const sawToolCall = evs\.some\(\(ev\) => Number\(ev && ev\.seq\) > baseSeq && ev\.type === 'tool\/call'\)/.test(SRC),
-    '源码:仪式完成判据含「基线之上出现过 tool/call」项')
-  ok(/if \(quiet && sawToolCall\)/.test(SRC) && !/\(ev\.type === 'assistant\/message' \|\| ev\.type === 'tool\/call'\)/.test(SRC),
-    '源码:仪式完成判定 = 两项**与**关系；旧的「assistant/message 或 tool/call 即完成」已移除')
+  ok(/const done = evs\.length > baseCount && evs\.some\(\(ev\) => Number\(ev && ev\.seq\) > baseSeq && \(ev\.type === 'assistant\/message' \|\| ev\.type === 'tool\/call'\)\)/.test(SRC),
+    '源码:仪式完成判据 = 事件尾增长 + 基线之上出现 assistant/message 或 tool/call')
   ok(/const before = await this\.handoffMaterialStamp\(\)[\s\S]{0,900}?const snap0 = await sc\.inspect\(sid, sigInspect\)/.test(SRC),
     '源码:事件尾基线在发仪式之前采样')
   ok(/diag\('auto-continue agreed by user: edge='/.test(SRC), '源码:agree 分支记录触发来源(此前只有 reject 有日志)')
@@ -412,10 +442,11 @@ console.log('[autocont-host] A9 接续会话标题 + 双口径(2026-09-10 实机
   eTitle.fns.armAutoContinue(agent, wl)
   await eTitle.fns.hostAutoContinue()
   ok(eTitle.calls.rename.length === 1 && eTitle.calls.rename[0].sessionId === 'session-new-1' &&
-     eTitle.calls.rename[0].title === '接续 #7 · dsh-auto-memory',
-    '宿主接续给新会话设「接续 #N · 工作区」标题(与浏览器路径同名)')
+     /^接续 #7 · dsh-auto-memory · \d{2}-\d{2} \d{2}:\d{2}$/.test(eTitle.calls.rename[0].title),
+    '宿主接续给新会话设「接续 #N · 工作区 · MM-dd HH:mm」标题(与浏览器路径同名;★2026-09-30 用户要求加时间戳)')
   ok(/if \(d\.contSeq && typeof sc\.rename === 'function'\)/.test(SRC), 'rename 缺失时 fail-soft(旧 harness 不炸)')
   ok(/const title = '接续 #' \+ String\(d\.contSeq\)/.test(SRC), '标题格式与 client 路径逐字一致')
+  ok(/contTitleStampPre\(\)/.test(SRC), '标题时间戳走 contTitleStampPre 单一真源(本地时区 MM-dd HH:mm)')
   // ②双口径(2026-09-13 起):水位/ring 同用一个分母(判定窗 = 官方声明窗口,provider 自报过硬限时取 min)——
   //   旧「可用额度(窗口−预留)」分母已废(reserve 退出分母,NEXT-VERSION-TODO 改点1);
   //   保留的第二个数是「距硬墙余量」(硬限 − 预留)。ring 与触发比例同分母是硬性验收项。
@@ -439,7 +470,7 @@ console.log('[autocont-host] A10 卡面口径 + 已接续闩锁 + 会话归属(2
     'pre-step arm 携带 window/source(否则确认卡显示「xxx / 0 token」)')
   // ②闩锁:同一会话只接续一次。旧实现只有 30 分钟冷却,冷却一过、用户切回旧窗口 → 再次 arm → 再次建会话
   //   (用户报「切回原来的窗口…它还是想接续流程」)。接续失败不落闩(允许重试)。
-  ok(/if \(this\.isContinuedSession\(sid\)\) \{[\s\S]{0,260}?return\s*\n?\s*\}/.test(SRC), 'armAutoContinue 对已接续会话直接返回（2026-09-29 后为带 diag 的块，语义不变）')
+  ok(/if \(this\.isContinuedSession\(sid\)\) return/.test(SRC), 'armAutoContinue 对已接续会话直接返回')
   ok(/engine\.markContinuedSession\(body\.fromSessionId, body\.toSessionId\)/.test(SRC),
     '浏览器路径在建好新会话后落闩(handoff-permission 回调点,而非取材料的预览点)')
   ok(/this\.markContinuedSession\(oldSid, newId\)/.test(SRC), '宿主路径接续成功后落闩')

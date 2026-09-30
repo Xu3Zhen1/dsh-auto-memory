@@ -166,7 +166,7 @@ class SemanticWorker(base.Worker):
         # 'shadow'(默认)=只记 shadow 行零发射;'canary-explicit'=仅 explicit 车道
         # 的 emit 决策发 activation_request 帧;'active' 预留。非法值回退 shadow
         # (fail closed)。此开关属 JS/用户运营面,不进策略工件——阈值权威仍在
-        # activation_policy_pre_v2.json(append-only),发射节流依赖 M6 收件箱的
+        # activation_policy_v2.json(append-only),发射节流依赖 M6 收件箱的
         # 硬校验+cooldown+TTL+latest-wins,worker 侧不重复限速。
         _em = str(self.embedding_config.get('activationEmitMode') or 'shadow')
         self.activation_emit_mode = _em if _em in (
@@ -184,9 +184,9 @@ class SemanticWorker(base.Worker):
                              'policies')
             try:
                 self._fv2 = featv2.load_and_verify_policy(
-                    os.path.join(pol_dir, 'recall_intent_lr_pre_v1.json'),
+                    os.path.join(pol_dir, 'recall_intent_lr_v1.json'),
                     os.path.join(pol_dir,
-                                 'activation_policy_pre_v2.json'))
+                                 'activation_policy_v2.json'))
             except Exception as exc:  # fail closed, retrieval unaffected
                 self._fv2_invalid = str(exc)[:200]
                 base.diag('featuresV2-policy-invalid: ' + self._fv2_invalid)
@@ -1063,7 +1063,7 @@ class SemanticWorker(base.Worker):
 
     def _intent_config_hash(self):
         ip_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               'policies', 'recall_intent_lr_pre_v1.json')
+                               'policies', 'recall_intent_lr_v1.json')
         try:
             with open(ip_path, encoding='utf-8') as f:
                 ip = json.load(f)

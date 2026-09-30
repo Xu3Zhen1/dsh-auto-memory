@@ -1,0 +1,40 @@
+{
+  "checks": [
+    "fixture-notice-1440 fits and is unobscured",
+    "fixture-notice-390 fits and is unobscured",
+    "notice acknowledgement closes",
+    "update-live-1440 fits and is unobscured",
+    "update-live-390 fits and is unobscured",
+    "update Escape closes",
+    "workbench-init-live fits and is unobscured",
+    "existing hub is not offered duplicate creation",
+    "fixture-summary-1440 fits and is unobscured",
+    "fixture-summary-390 fits and is unobscured",
+    "fixture-greeting-390 fits and is unobscured",
+    "fixture-continue-confirm-1440 fits and is unobscured",
+    "fixture-continue-confirm-390 fits and is unobscured",
+    "reject is transmitted to intercepted fixture route",
+    "fixture-continue-progress-390 fits and is unobscured",
+    "no fabricated percentage",
+    "no runtime errors"
+  ],
+  "evidence": [
+    "fixture-notice-1440",
+    "fixture-notice-390",
+    "update-live-1440",
+    "update-live-390",
+    "workbench-init-live",
+    "fixture-summary-1440",
+    "fixture-summary-390",
+    "fixture-greeting-390",
+    "fixture-continue-confirm-1440",
+    "fixture-continue-confirm-390",
+    "fixture-continue-progress-390"
+  ],
+  "errors": [],
+  "limitations": [
+    "Notice, summary, return greeting and continuation API states are explicit isolated UI fixtures.",
+    "Update text and memory-hub existing status are real host responses.",
+    "No continuation, paid model or new hub creation was executed."
+  ]
+}

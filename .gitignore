@@ -28,3 +28,7 @@ artifacts/release-c2-asset-pack/*.tgz
 *.bak
 *.bak-*
 
+
+# 含个人记忆的隔离扫描截图,禁止提交/上传(handoff 规定)
+artifacts/pr146-native-ui/operations-外部来源.png
+artifacts/pr146-native-ui/host.pid

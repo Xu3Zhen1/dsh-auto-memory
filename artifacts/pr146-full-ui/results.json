@@ -1,0 +1,108 @@
+{
+  "checks": [
+    "Isolated memory root",
+    "Workbench not opened before independent settings",
+    "Host settings uses shared form without sidebar",
+    "Welcome independent of workbench CSS",
+    "Tour step 1 fits horizontally",
+    "Tour step 2 fits horizontally",
+    "Tour step 3 fits horizontally",
+    "Tour step 4 fits horizontally",
+    "Tour step 5 fits horizontally",
+    "Tour step 6 fits horizontally",
+    "Tour step 7 fits horizontally",
+    "Tour step 8 fits horizontally",
+    "Tour step 9 fits horizontally",
+    "Welcome Esc closes",
+    "Host settings follows real host dark theme",
+    "Narrow tour 1 fits",
+    "Narrow tour 2 fits",
+    "Narrow tour 3 fits",
+    "Narrow tour 4 fits",
+    "Narrow tour 5 fits",
+    "Narrow tour 6 fits",
+    "Narrow tour 7 fits",
+    "Narrow tour 8 fits",
+    "Narrow tour 9 fits",
+    "Panel starts with quick overview",
+    "Panel drag retained",
+    "Panel reopens",
+    "Coexisting settings have unique IDs",
+    "No React/runtime exceptions"
+  ],
+  "measurements": [
+    {
+      "step": 1,
+      "width": 734,
+      "overflow": false,
+      "title": "欢迎使用 dsh-auto-memory",
+      "buttons": 667.6875,
+      "viewport": 900
+    },
+    {
+      "step": 2,
+      "width": 734,
+      "overflow": false,
+      "title": "记忆是怎么被想起的",
+      "buttons": 693.578125,
+      "viewport": 900
+    },
+    {
+      "step": 3,
+      "width": 734,
+      "overflow": false,
+      "title": "周期性记忆注入",
+      "buttons": 759.90625,
+      "viewport": 900
+    },
+    {
+      "step": 4,
+      "width": 734,
+      "overflow": false,
+      "title": "暂离问候与无人值守",
+      "buttons": 814.4375,
+      "viewport": 900
+    },
+    {
+      "step": 5,
+      "width": 734,
+      "overflow": false,
+      "title": "反思与总结",
+      "buttons": 734.015625,
+      "viewport": 900
+    },
+    {
+      "step": 6,
+      "width": 734,
+      "overflow": false,
+      "title": "接入别的 AI（扫描结果）",
+      "buttons": 859,
+      "viewport": 900
+    },
+    {
+      "step": 7,
+      "width": 734,
+      "overflow": false,
+      "title": "三级语义引擎",
+      "buttons": 803.859375,
+      "viewport": 900
+    },
+    {
+      "step": 8,
+      "width": 734,
+      "overflow": false,
+      "title": "该出手时才出手",
+      "buttons": 814.4375,
+      "viewport": 900
+    },
+    {
+      "step": 9,
+      "width": 734,
+      "overflow": false,
+      "title": "一切就绪",
+      "buttons": 810.703125,
+      "viewport": 900
+    }
+  ],
+  "errors": []
+}

@@ -1,5 +1,5 @@
 // M7-3 Semantic Worker 测试(docs/M7-ALGORITHM-DECISION.md D4):
-// worker_semantic_pre_v1.py 复用 worker_pre_v1 协议层——
+// worker_semantic_v1.py 复用 worker_v1 协议层——
 // 协议零回退(rejection 矩阵复测)/commit 后建 versioned vectors(identity block)/
 // context_push 影子候选(本地日志,不发新帧)/miv 隔离/stale 检测与重建/
 // 无 embedding 配置时降级为纯协议/semantic worker 抑制 fake activation。
@@ -23,7 +23,7 @@ const CLIENT = await import('../../lib/python-sidecar-client.js')
 const WIRE = await import('../../lib/m7-wire.js')
 const SYNC = await import('../../lib/index-sync.js')
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const SEM_WORKER = path.join(HERE, '..', '..', 'python', 'worker_semantic_pre_v1.py')
+const SEM_WORKER = path.join(HERE, '..', '..', 'python', 'worker_semantic_v1.py')
 
 function mkEmbConfig(home, dim = 64) {
   const p = path.join(home, `emb-${dim}.json`)
@@ -172,7 +172,7 @@ console.log('[N3] context_push → 影子候选(本地日志,零新帧) + gold t
   const ids = new Set(row.candidates.map((x) => x.memoryId))
   ok(ids.size === row.candidates.length, '候选按 memoryId 去重聚合(top-chunk 分数)')
   const dupPush = await c.request('context_push', pushPayload('obs_pre_' + hex32('n3obs'), miv, 'breaker 连续失败三次之后会熔断吗'))
-  ok(dupPush.ok && dupPush.frame.payload.accepted === false && dupPush.frame.payload.reason === 'busy', '同 obs 幂等 busy(worker_pre_v1 语义保持)')
+  ok(dupPush.ok && dupPush.frame.payload.accepted === false && dupPush.frame.payload.reason === 'busy', '同 obs 幂等 busy(worker_v1 语义保持)')
   await c.dispose('n3'); rmSync(home, { recursive: true, force: true })
 }
 

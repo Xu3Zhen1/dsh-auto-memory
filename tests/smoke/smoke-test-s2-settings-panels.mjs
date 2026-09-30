@@ -16,6 +16,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { stripGeneratedSkin } from '../lib/skin-bundle.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -24,7 +25,11 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   - ' + m) } else { fa
 const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b), m + '  (got ' + JSON.stringify(a) + ')')
 const cnt = (h, n) => { let c = 0, i = 0; for (;;) { const p = h.indexOf(n, i); if (p < 0) return c; c++; i = p + n.length } }
 
-const SRC = fs.readFileSync(path.join(ROOT, 'lib/client.js'), 'utf8')
+// ★2026-09-28（集成 iter5 皮肤）：本套件断言的是**经典档契约**（全仓计数/唯一性），
+//   而生成区把若干经典组件派生了一份新皮肤版本（SettingsPage→Iter5Settings 等）⇒ 计数翻倍假红。
+//   故此处剥离生成区再断言 —— 不是放宽判据，而是把作用域限定到它真正该守的经典档。
+//   皮肤自身由 smoke-test-iter5-skin.mjs 验收（含「剥离后与基线逐字节一致」的守恒断言）。
+const SRC = stripGeneratedSkin(fs.readFileSync(path.join(ROOT, 'lib/client.js'), 'utf8'))
 
 const KEYS = ['engine', 'window', 'capacity', 'skills', 'handoff', 'auto', 'store', 'look', 'about']
 const STORE_HEAD = "section('store', sectionLabels.store, ["
@@ -114,7 +119,13 @@ console.log('[G2] 渲染路径不被折叠/编辑器开合包裹')
   ok(!!span, 'G2a 面板块边界可解（正面终点锚）')
   const block = span ? span.block : ''
   const blkLines = cnt(block, '\n')
-  ok(blkLines >= 100 && blkLines <= 130, 'G2a2 块行数在 100~130（实得 ' + blkLines + '，禁止用 store 邻接当终点导致过捕获）')
+  // ★2026-09-30：上界 130 → 150 —— Python 行升级为**三态显示**（就绪/有文件未启动/未安装 +
+  //   报错外显 + 开发值提示），两个面板各 +11 行（实得 141）。本判据的**意图是"禁止过捕获"**
+  //   （不得用 store 邻接当终点把别的内容吞进来），上界仍远小于"吞掉相邻分区"的规模
+  //   （store 头在其后 6 个分区处），语义保留。
+  // ★2026-09-30 二调：上界 150 → 165 —— 三态显示的 mode-aware 文案分支再加 3 行×2（实得 153）。
+  //   意图不变：禁止把 store 邻接等无关内容吞进块（那会是几百行）；165 仍远小于该规模。
+  ok(blkLines >= 100 && blkLines <= 165, 'G2a2 块行数在 100~165（实得 ' + blkLines + '，禁止用 store 邻接当终点导致过捕获）')
   ok(!block.includes('AnimatedDisclosure'), 'G2b 面板块内无 AnimatedDisclosure（不被折叠包裹）')
   ok(!block.includes('promptEditOpen'), 'G2c 面板块不依赖「编辑 prompt 层」编辑器开合')
   ok(block.includes('detOpen ? (function () {'), 'G2d 面板开合只由 detOpen 单一状态决定')
@@ -150,9 +161,14 @@ console.log('[G4] 根因前提：导航为滚动式 + 块的物理位置')
   const engAt = SRC.indexOf("section('engine', sectionLabels.engine, [")
   ok(SRC.indexOf("section('window', sectionLabels.window, [") > engAt, 'G4d 分区平铺渲染（engine 之后仍渲染 window）')
   // 块的物理位置：紧贴 semMode 行之后，且仍在 store 头之前
+  // ★2026-09-29（C2 增量嵌入设置项）：semMode 行后面插入了 fIncEmbed 开关行（普通 field，
+  //   无面板语义）⇒ 「行号差=1」放宽为「差=2、且中间那行确为 fIncEmbed 开关」——
+  //   防漂移本意不变：面板与它的触发按钮区（semMode 检测按钮）之间只允许插入**普通设置行**。
   const insLine = cnt(SRC.slice(0, SRC.indexOf(INSERT_ANCHOR)), '\n')
   const blkLine = cnt(SRC.slice(0, SRC.indexOf(MARK_START)), '\n')
-  eq(blkLine - insLine, 1, 'G4e 面板块紧贴 semMode 行之后（行号差 = 1）')
+  eq(blkLine - insLine, 2, 'G4e 面板块紧随 semMode 行（中间只隔 1 行 fIncEmbed 开关）')
+  const between = SRC.slice(SRC.indexOf(INSERT_ANCHOR), SRC.indexOf(MARK_START))
+  ok(/field\(t\('fIncEmbed'\)/.test(between) && cnt(between, '\n') === 2, 'G4e2 隔行确为 fIncEmbed 开关行（无面板/向导语义漂移）')
   ok(SRC.indexOf(MARK_START) < SRC.indexOf(STORE_HEAD), 'G4f 面板块物理位置在 store 分区头之前')
   eq(cnt(SRC, STORE_HEAD), 1, 'G4g store 分区头唯一')
   // store 分区内不得再出现面板/向导（防再次异地）
@@ -180,7 +196,14 @@ console.log('[G5] 反例自检：把面板搬回 store 后 G1 必须变红（守
   //   ② 别用 startsWith(锚, 行首偏移) —— 行首有 10 空格缩进 ⇒ 恒假。（两类近似本次都踩过）
   ok(!nextLineText(badSrc, badSrc.indexOf(INSERT_ANCHOR)).startsWith(MARK_LINE), 'G5d 反例下面板不再紧贴 semMode 行')
   ok(nextLineText(badSrc, badSrc.indexOf(STORE_HEAD)).startsWith(MARK_LINE), 'G5f 反例复现了事故形态（面板紧贴 store 分区头）')
-  ok(nextLineText(SRC, SRC.indexOf(INSERT_ANCHOR)).startsWith(MARK_LINE), 'G5g 真源码里面板确实紧贴 semMode 行')
+  // ★2026-09-29：semMode 行后插入了 fIncEmbed 开关行 ⇒ 邻接判定改为「下一行是 fIncEmbed 开关、
+  //   再下一行是面板注释」——防漂移语义不变（面板仍紧邻其触发按钮区）。
+  //   ⚠️ 锚点必须从 INSERT_ANCHOR 连续走，**不能**用 indexOf('fIncEmbedHint')——
+  //      那会先命中词典里的定义串（`fIncEmbedHint:`），走到别的分区去（本轮踩过）。
+  const incLine = nextLineText(SRC, SRC.indexOf(INSERT_ANCHOR))
+  ok(/^field\(t\('fIncEmbed'\)/.test(incLine), 'G5g1 semMode 行下一行是 fIncEmbed 开关')
+  const afterInc = nextLineText(SRC, SRC.indexOf(incLine))
+  ok(afterInc.startsWith(MARK_LINE), 'G5g2 fIncEmbed 行下一行是检测面板注释（面板仍在触发区旁）')
   // 正向：真源码里 engine 与 store 都还在（未被反例污染）
   ok(eng && sectionOf(sectionBounds(SRC), SRC.indexOf(MARK_START)) === 'engine', 'G5e 真源码未被反例影响，块仍在 engine')
 }

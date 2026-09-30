@@ -110,11 +110,15 @@ function extractFn(header) {
   throw new Error('花括号不平衡：' + header)
 }
 const src = extractFn('async function applyRuleEditPre(engine, op, payload = {}, opts = {})')
-const apply = new Function('listRuleItemsPre', 'appendRuleItemPre', 'updateRuleItemPre', 'removeRuleItemPre',
+// ★#147（2026-09-30）：applyRuleEditPre 删除分支新增 stripOrphanAnchorsPre 引用（模块级绑定）——
+//   抽取重建的作用域里没有它 ⇒ 必须按注入表纪律一并注入，否则 ReferenceError 被外层 catch 吞掉，
+//   表现为「独占卡删除静默不生效」（与 autocont-host 夹具 contTitleStampPre 同款坑）。
+const apply = new Function('listRuleItemsPre', 'appendRuleItemPre', 'updateRuleItemPre', 'removeRuleItemPre', 'stripOrphanAnchorsPre',
   'return ' + src)(listRuleItemsPre,
   (await import('../../lib/rules-edit.js')).appendRuleItemPre,
   (await import('../../lib/rules-edit.js')).updateRuleItemPre,
-  (await import('../../lib/rules-edit.js')).removeRuleItemPre)
+  (await import('../../lib/rules-edit.js')).removeRuleItemPre,
+  (await import('../../lib/index.js')).stripOrphanAnchorsPre)
 ok(typeof apply === 'function', 'applyRuleEditPre 可被取出运行')
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'p9-rules-'))
@@ -145,6 +149,48 @@ eq(afterRm.items.length, 2, 'remove 真删且条数回落')
 ok(!fs.readFileSync(file, 'utf8').includes('第三条'), '被删条目确实从磁盘消失（真删，非软标）')
 const noExpectRoute = await apply(fakeEngine, 'remove', { index: 1 }, { requireExpect: false })
 ok(noExpectRoute.ok, 'GUI 侧 requireExpect=false 时沿用 R7 语义（不强制）')
+console.log('[P9] #147 独占锚点卡条目删除（orphan-anchor 整篇拒写，2026-09-30）')
+{
+  const { parseAnchors } = await import('../../lib/memory-anchor.js')
+  const { renderReplace } = await import('../../lib/memory-writer.js')
+  const { removeRuleItemPre } = await import('../../lib/rules-edit.js')
+  const NL = String.fromCharCode(10)
+  const idA = 'mem_' + 'a'.repeat(32)
+  const idB = 'mem_' + 'b'.repeat(32)
+  // 真实形态：锚点卡背靠背 —— 删掉独占条目后，marker_a 直接撞上 marker_b ⇒ orphan-anchor。
+  // （若中间隔有日期标题等非空行，parseAnchors 视其为卡内容 ⇒ 不触发 orphan，与本修法无冲突。）
+  const text2 = ['# 用户级记忆', '', '<!-- memory:' + idA + ' -->', '- 独占卡条目：插件淘汰等于彻底删。', '<!-- memory:' + idB + ' -->', '- 共存卡普通条目。', ''].join(NL)
+  const file2 = path.join(tmp, 'MEMORY-exclusive.md')
+  fs.writeFileSync(file2, text2, 'utf8')
+  // 注意：上方既有 fakeEngine 绑定的是原 file；此处按 #147 场景另起一个绑定 file2 的引擎。
+  const fakeEngine2 = {
+    resolvePaths: async () => ({ userFile: file2 }),
+    readTextSafe: async (p) => { try { return fs.readFileSync(p, 'utf8') } catch (_) { return '' } },
+    writeFull: async (p, t) => { fs.writeFileSync(p, t, 'utf8'); return t },
+  }
+  ok(parseAnchors(Buffer.from(text2, 'utf8')).status === 'clean', '#147 前置：样本文件 parseAnchors=clean（conflict 是删除动作自己造出来的）')
+  const rawRm = removeRuleItemPre(text2, 0)
+  ok(parseAnchors(Buffer.from(rawRm.text, 'utf8')).conflicts.some((c) => c.type === 'orphan-anchor'),
+    '#147 复现：removeRuleItemPre 只摘正文行 ⇒ 空卡 orphan-anchor')
+  ok(renderReplace(Buffer.from(text2, 'utf8'), Buffer.from(rawRm.text, 'utf8')).ok === false,
+    '#147 复现：renderReplace 整篇拒写（conflict:orphan-anchor，与用户所报 memory-anchor-replace-failed 一致）')
+  const r147 = await apply(fakeEngine2, 'remove', { index: 0, expect: '独占卡条目：插件淘汰等于彻底删。' }, { requireExpect: true })
+  ok(r147.ok === true, '#147 修复：独占卡条目 remove 成功（不再整篇拒写）')
+  ok(Array.isArray(r147.removedAnchors) && r147.removedAnchors[0] === idA,
+    '#147 removedAnchors 透出被剥 memoryId（等价 renderReplace 语义中的 removed）')
+  const disk2 = fs.readFileSync(file2, 'utf8')
+  ok(!disk2.includes('独占卡条目') && !disk2.includes('<!-- memory:' + idA + ' -->'),
+    '#147 磁盘真删：条目行与空锚点行都消失（不再需要手编文件绕过）')
+  const after2 = parseAnchors(Buffer.from(disk2, 'utf8'))
+  ok(after2.status === 'clean' && after2.records.some((r) => r.memoryId === idB),
+    '#147 删后结构仍 clean，共存卡(idB)不受影响')
+  const noOrphan = (await import('../../lib/index.js')).stripOrphanAnchorsPre('# 头部' + NL + NL + '- 普通条目没有锚点。' + NL)
+  ok(noOrphan.ids.length === 0 && !noOrphan.text.includes('<!-- memory:'),
+    '#147 反例：无锚点/无空卡文本零改动（不误删）')
+  ok(SRC_IX.includes('stripOrphanAnchorsPre(r.text)'),
+    '#147 源码守卫：applyRuleEditPre 删除分支接线 stripOrphanAnchorsPre（GUI 与 memory_rules 共用）')
+}
+
 fs.rmSync(tmp, { recursive: true, force: true })
 
 console.log('\n[P9] ' + pass + ' passed, ' + fail + ' failed')

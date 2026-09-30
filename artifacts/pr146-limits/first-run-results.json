@@ -1,0 +1,30 @@
+{
+  "checks": [
+    "Fresh browser automatically opens welcome",
+    "Welcome switch persisted through actual config API",
+    "Welcome switch restored",
+    "Welcome completion exits tour",
+    "Real host workbench initialized"
+  ],
+  "results": {
+    "setupButtons": [
+      "同意并建立",
+      "稍后"
+    ],
+    "workbench": {
+      "ready": true,
+      "readySource": "memory+verify",
+      "reason": "ok",
+      "verify": {
+        "ok": true,
+        "reason": "ok",
+        "epoch": "B10360",
+        "sessionId": "session-e8cd6338-6485-4966-bf3a-c34b33cd208e",
+        "cwd": "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\aik_auto_memory_use",
+        "preset": "danger-full-access"
+      },
+      "cwd": "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\aik_auto_memory_use",
+      "phase": "active"
+    }
+  }
+}

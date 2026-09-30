@@ -11,7 +11,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 const CLIENT = await import('../../lib/python-sidecar-client.js')
 const SYNC = await import('../../lib/index-sync.js')
-const SEM_WORKER = path.join(HERE, '..', '..', 'python', 'worker_semantic_pre_v1.py')
+const SEM_WORKER = path.join(HERE, '..', '..', 'python', 'worker_semantic_v1.py')
 const PYEXE = path.join(HERE, '..', '..', 'python', 'bench', '.venv', 'Scripts', 'python.exe')
 const sha256Hex = (s) => createHash('sha256').update(Buffer.from(s)).digest('hex')
 const hex32 = (s) => sha256Hex(s).slice(0, 32)
@@ -122,7 +122,7 @@ ok(t0amberRow && t0amberRow.decision === 'emit' && t0.acts.length === 0, 'T0 sha
 if (t1.acts.length > 0) {
   const a = t1.acts[0]
   ok(a.kind === 'activation_request' && String(a.activationId || '').startsWith('act_pre_'), 'act kind/id shape')
-  ok(a.threshold && a.threshold.policyVersion === 'activation_policy_pre_v2', 'threshold.policyVersion = activation_policy_pre_v2')
+  ok(a.threshold && a.threshold.policyVersion === 'activation_policy_v2', 'threshold.policyVersion = activation_policy_v2')
   ok(a.level === 'excerpt', 'level=excerpt (minimal content tier)')
   ok(Number.isInteger(a.ttlSteps) && a.ttlSteps >= 1 && a.ttlSteps <= 10, 'ttlSteps in [1,10]')
   ok(Array.isArray(a.candidates) && a.candidates.length >= 1 && a.candidates.every(x => /^mem_[0-9a-f]{32}$/.test(x.memoryId) && /^[0-9a-f]{64}$/.test(x.recordDigest)), 'candidates carry provenance identity')

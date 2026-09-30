@@ -1,0 +1,17 @@
+{
+  "checks": [
+    "isolated roots",
+    "native workbench mounts",
+    "浏览 renders without boundary failure",
+    "日志 renders without boundary failure",
+    "反思 renders without boundary failure",
+    "检索 renders without boundary failure",
+    "real lexical search returns a selectable result",
+    "search shows host output",
+    "narrow workbench fits",
+    "narrow search fits",
+    "panel close/reopen restores unsaved draft",
+    "no runtime errors"
+  ],
+  "errors": []
+}

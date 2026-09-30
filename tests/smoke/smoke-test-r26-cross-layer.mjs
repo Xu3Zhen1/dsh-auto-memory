@@ -1,13 +1,26 @@
 /** R26 · 跨层对账审计：includeArchive 缺口收官（真 import + 真调用 + 负路径）。 */
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const { foldCardsPre, buildByTagPre } = await import(pathToFileURL(path.join(ROOT, 'lib', 'wb-sidecar.js')).href)
-const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
-const IX = readFileSync(path.join(ROOT, 'lib', 'index.js'), 'utf8')
+const { foldCardsPre, buildByTagPre } = await import(new URL('../../lib/wb-sidecar.js', import.meta.url).href)
+import { fileURLToPath } from 'node:url'
+import { stripGeneratedSkin } from '../lib/skin-bundle.mjs'
+
+/** 平台无关行尾守恒：存在 CRLF 时不得有裸 LF；全 LF 合法（CI/Linux 检出态）。
+ *  ★2026-09-28：原断言写作 cnt(NL)===cnt(CRNL)（即"必须全 CRLF"），在 Linux CI 上必红——
+ *  索引里是 LF，本机 core.autocrlf=true 才检出 CRLF。守的语义不变：文件不得混合行尾。 */
+const damNoMixedEol = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length
+  const lf = (s.match(/\n/g) || []).length
+  if (crlf === 0) return true      // 全 LF：合法（CI 检出态）
+  return crlf === lf               // 有 CRLF 则不得再有裸 LF
+}
+const damPath = (rel) => fileURLToPath(new URL('../../' + rel, import.meta.url))
+// ★2026-09-28（集成 iter5 皮肤）：本套件断言的是**经典档契约**（全仓计数/唯一性），
+//   而生成区把若干经典组件派生了一份新皮肤版本（SettingsPage→Iter5Settings 等）⇒ 计数翻倍假红。
+//   故此处剥离生成区再断言 —— 不是放宽判据，而是把作用域限定到它真正该守的经典档。
+//   皮肤自身由 smoke-test-iter5-skin.mjs 验收（含「剥离后与基线逐字节一致」的守恒断言）。
+const SRC = stripGeneratedSkin(readFileSync(damPath('lib/client.js'), 'utf8'))
+const IX = readFileSync(damPath('lib/index.js'), 'utf8').replace(/\r\n/g, '\n')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']')
@@ -52,12 +65,12 @@ eq(SRC.split('apiGet(API.kanbanBoard').length - 1, 4, 'C4b 同源复核')
 ok(!/includeArchive/.test(SRC.slice(SRC.indexOf('function WhiteboardGraphView'), SRC.indexOf('function WhiteboardGraphView') + 3000)), 'C5 ★画布视图不传 includeArchive（口径不被扩散）')
 
 /* ── D. 与 46 卷 §四 B2 的判据对拍 ── */
-const V46 = readFileSync(path.join(ROOT, 'docs', 'teamwork-impl', '46-看板排布优化prompt.md'), 'utf8')
+const V46 = readFileSync(damPath('docs/teamwork-impl/46-看板排布优化prompt.md'), 'utf8')
 ok(/includeArchive/.test(V46) && /结构性死泳道|恒空/.test(V46), 'D1 ★权威卷 46 §四 B2 确以 includeArchive 定性该缺陷')
 
 /* ── E. 守恒 ── */
 eq((SRC.match(/(?<!function )MEMORY_TABS\(\)/g) || []).length, 2, 'E1 计数锁不变')
-ok(cnt(SRC, '\n') === cnt(SRC, '\r\n'), 'E2 纯 CRLF')
+ok(damNoMixedEol(SRC), 'E2 纯 CRLF')
 // ★修正（本轮自查）：原 E3 是 `eq(cnt(IX,X), cnt(IX,X))` —— **自比恒真哨兵**，等于没测。
 //   改为真断言：宿主**本轮零改动**（sha16 与基线一致）+ 路由数守恒。
 // ★基线演进（2026-09-28，用户点名「先加在旧版上」）：R25→R44 唯一有意变更 = index.js DEFAULT_CONFIG
@@ -68,16 +81,114 @@ ok(cnt(SRC, '\n') === cnt(SRC, '\r\n'), 'E2 纯 CRLF')
 // ★2026-09-28 基线演进 R47→R48：修「一键接续漂到别的工作区」——handoffPanelData 的刷新目标不再跨工作区
 //   磁盘回退（原 recentSessionIdFallback 会返回别的工作区的会话，致新会话落到错误 Workspace）。
 //   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
-// ★2026-09-29 基线演进 R48→R49（本轮四处有意变更，均见交接模块优化评估报告）：
-//   ① 修 A（§2.7/§2.8）：「硬触发被 arm 闸拦下」—— `over` 与 arm 闸改为**共用** armEligiblePre，
-//      生效阈值落 rt.waterLevelThreshold 并由两个调用点透传，早退点补 diag（gate=/measured= 同帧）；
-//      连带 lib/water-window.js 新增导出 armEligiblePre。
-//   ② 改动 B（§3）：交接契约指针进 navParts（放在 `if (pack)` 之外，判决走
-//      handoff-anchor.js:contractPointerLinePre 纯函数，含 nav 占比自检）。
-//   ③ 改动 C（§4）：仪式结束判据由「出现 assistant/message 或 tool/call」改为
-//      「连续 N 次采样事件数不增长 **且** 基线之上出现过 tool/call」（消灭一类静默成功）。
+// ★2026-09-28 基线演进 R50→R51：修「工作目录不正确」（用户报障，2.2.1 起即错）——buildContinueCarry /
+//   buildPrevSessionPack 的材料读取与转写包落盘从 resolvePaths(undefined)（插件当前工作区）改为
+//   resolvePathsForSession（源会话工作区）。真机实证：aik 会话 f49ace38 的转写包落进
+//   --D--dsh-auto-memory-- 桶（包内「工作区:」与落盘桶自相矛盾）；回归守卫 = continue-host H10。
 //   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
-eq(createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase(), 'D0557CC3577E5577', 'E3 ★宿主 lib/index.js 基线守恒（sha16 = R49 基线；R48→R49 放行 = 修 A 硬触发共用闸 + 改动 B 契约指针进 nav + 改动 C 仪式静默判据，理由见上）')
+// ★2026-09-28 基线演进 R51→R52：宿主兜底接续补 create 三级回退（workspaceId 失效 → cwd → 裸
+//   agentPreset），与浏览器 executeContinue 同款（旧实现 create 一抛整单失败，无人值守无人可救）；
+//   lastOk 增 fromSid（被接续旧会话 id），前端把 sessions.open 收窄为只切「正看着旧会话」的窗口。
+//   回归守卫 = autocont-host 101 断言 + continue-chain G15。语义保留：除本条与 E4 计数外，
+//   index.js 任何其他改动仍会被本锁抓住。
+// ★2026-09-28 基线演进 R52→R53（去 pre 收官）：源码树不再有 pre 文件，发布退化为纯拷贝。
+//   本批 index.js 变更 = 策略工件路径改裸名（`*_pre_*.json` → `*_v*.json`）。旧代码两条候选路径
+//   全落空（包内只有裸名）⇒ `loadAndVerifyPolicy` 抛错被 catch 吞掉 ⇒ JS 语义臂静默拿不到策略
+//   （默认 auto 档也受影响）。语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
+// ★2026-09-29 基线演进 R54→R55（3.2.3 发版批，增量归因）：① sessions 检索兜底
+//   （searchSessionHistory 捕获宿主 SESSION_QUERY_PERSISTENCE_FAILED 后走词法兜底扫描
+//   lexicalSessionScanFallback——宿主迁移器只认 subagent/descriptor v3，39 个 8 月旧会话毒死整通道）；
+//   ② 写入门 P0：detectStutter 两层判据（CJK 语种盲区修复 + 周期性 verbatim 循环仍拦，
+//   捕获集 ⊆ 旧判据）+ writeGateRefusalTextPre 六入口按原因分派带触发证据 + 两道闸门挂 detail；
+//   ③ memory_rules 列表行字面 \n 修真换行。全量回归绿 + 全库 1342 文件实测零新增误报后放行。
+// ★2026-09-29 基线演进 R55→R56（回收链路修复批，增量归因）：
+//   ① 真根因修复：sessionArchiveSweep / locateSessionDir 原以 `this.ctx` 取宿主服务，
+//      而本文件对「引擎点 ctx」**全仓零写入点**（引擎实际只写 `engine._ctxRef = ctx`）
+//      ⇒ reg 恒 null ⇒ 归档分支整段跳过、删除分支无 archivedAt 可依 ⇒ 归档/删除自
+//      2026-09-26 落地起**静默空转从未生效**（42 天诊断日志 0 条 session archive 为证）。
+//      现新增 `_engineCtx()` 统一取上下文，取不到时 diagThrottled 留痕（根治零日志静默）。
+//   ② 作用域收窄（用户硬约束「只回收记忆中枢工作区的这些内容，不要把用户其他子代理
+//      有用的东西全部删掉」）：新增 `_hubProjectDirs(index)`，把 rows / childIds / 删除目标
+//      三处全部限定为工作台会话所在的项目目录；解析不出即 fail-closed 整体跳过
+//      （`reason: 'hub-unresolved'`），绝不退化成全盘扫描。
+//   真机实测（只读预演）：中枢 = 248 会话/22.9MB；其他 11 个工作区 337 会话/911.7MB
+//      **0 触碰**；删除目标 0（首轮无归档时间 ⇒ 只归档不删除）。
+//   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
+// ★2026-09-29 基线演进 R57→R58（C2 增量嵌入批，增量归因；同批已**撤销** R57 引入的读盘捷径）：
+//   ① 撤销：R57 的 `recallL0CachedRank` + `l0RecallFromIndex` 经真机判死——
+//      recall 语料 1111 条 vs 落盘索引 630 条（覆盖率 56.7%，两侧来源集不同：recall 扫 40 日志
+//      +30 反思+PLAN+账本，sync 只落 14+14），且 5 分钟节流窗与召回完整性结构性冲突
+//      ⇒ 覆盖判定恒失败、捷径为死代码（撤销理由留在 _semanticRankBest 原处注释）。
+//   ② 新增（正确修法）：`config.semanticEmbedIncremental`（默认 true）+ 引擎构造处
+//      `get incremental()` 接线 + semantic-js `buildIndexIfStale` 改为按 **sha256(编码输入)**
+//      复用向量池（与 l0-index.js 的 l0Hash 两级复用同源）。语义等价（真机 cosine 1.000000），
+//      纯省 CPU：1111 条语料实测全量重嵌 ≈0.9s，追加一行日志 hash 复用率 100% ⇒ 增量 ≈0–16ms。
+// ★2026-09-29 基线演进 R58→R59（「去 pre」死链自愈批，增量归因）：
+//   真机事故：用户配置 pythonBackendWorkerPath 仍是去 pre 前的 `worker_semantic_pre_v1.py`
+//   （磁盘只有裸名 worker_semantic_v1.py）⇒ spawn ENOENT ⇒ sidecar 恒 unavailable ⇒
+//   C3 语义臂静默失效 8 天、engineSwitch.failed 累到 4112，用户表现为 recall 超时。
+//   成因：配置名迁移器（2026-09-23）判据是**逐键补齐**，救不了"键在但值是死链"。
+//   本批：① python-sidecar-client 新增 resolveWorkerScriptPathPre（严格形态判定，只在
+//   「不存在 + 历史命名」时纠正，合法自定义路径与真缺失一律原样透传）；
+//   ② spawn 路径改经该函数；③ loadConfig 汇聚点补**取值级自愈**（纠正后原子落盘）；
+//   ④ 新增守卫 smoke-test-depre-residue（16 条，含反例）。
+// ★2026-09-30 基线演进 R59→R60（Python 运行时"真跑通"判据批，增量归因）：
+//   用户三条原则：①判据=真跑通（有反馈才算就绪）；②健壮降级（失败了也继续、把报错摆出来）；
+//   ③开发值显式识别。本批：
+//     ① 新模块 lib/python-runtime.js —— 解释器候选链（配置值→用户位 venv→开发树 venv→系统
+//        PATH）+ deps 实测（import transformers/onnxruntime/numpy）+ isDev 标记；
+//     ② index.js 新增 engine.probePythonRuntime（带缓存/单飞行）与 engine._probeWorkerHealthOnce
+//        （短命 worker 发 health 帧读 embedding 视图 = 真跑通反馈）；resolvedPythonCommand 接入
+//        sidecar 的 command；
+//     ③ semanticDeepDetect 与 resolveSemanticTier 的 Python 判据由「模型文件存在」改为
+//        「模型在 **且** 解释器 deps 通过」（真机事故：文件在但解释器缺依赖时面板显示就绪、
+//        实际全程词法兜底）；新增 pythonRuntime 字段下发前端；
+//     ④ worker health 判据修正：不把 `embedding.ready` 当跑通（它=非 stale 向量数>0，
+//        stale 是常态）——改看 `enabled && !error`（embedder 真加载成功）。
+// ★2026-09-30 基线演进 R60→R61（真跑通判据矛盾修复批，增量归因；用户截图三矛盾）：
+//   ① Bug1 修复：_probeWorkerHealthOnce 用了 makeRequestFramePre 但漏导入 ⇒ ReferenceError
+//      被 fail-soft 捕获，面板显示"makeRequestFramePre is not defined"（补 ./m7-wire.js 导入）；
+//   ② probePythonRuntime 重构：state 五态（verified-ok/ready-unverified/start-failed/deps-failed/
+//      no-files）+ usable 汇总 + worker 判定独立缓存（10min，withWorker 才重测）；
+//      pythonRuntimeCached 只读访问器（recall 热路径零阻塞）；
+//   ③ resolveSemanticTier 与面板**同源同判**：有 worker 反馈以反馈为准（修「面板 ⚠ 未能启动
+//      vs 档位 C3」同屏矛盾）；无缓存文件乐观 + 后台补探测；
+//   ④ semantic-status 的 pythonInt8Present 同步升级为 usable 语义 + 下发 pythonRuntime；
+//   ⑤ deepDetect 走 withWorker:true（面板是显式动作，值得付 19s 拿真反馈）；
+//   ⑥ 前端三态以后端 state 为准 + mode-aware 文案（修「未安装、当前模式不受影响」在
+//      Python 档下的错误措辞）。
+//   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
+
+// ★2026-09-30 基线演进 R61→R62（接续工作区漂移修复批，增量归因；用户报障「A区点击接续，新会话在B区」）：
+//   三条漂移通道全修：
+//   ① buildPrevSessionPack：want 显式给出但无持久化文件时，**不再静默改用 _lastAgent**（最近活跃
+//      会话）的转写包顶替 —— 旧实现把 cwd/模型/转写整体换成别的会话，且 pack.cwd 存在 ⇒
+//      wsFallback 警告都不触发（多窗口下=「A 区点接续，新会话在 B 区」的直接来源）；
+//      现诚实降级 {sessionId: want}，工作区仍走 registry/持久化头反查（行为级守卫=continue-host H11）；
+//   ② buildContinueCarry：pack=null 时 prevSid 沿用显式 preferSid（旧实现落全局 currentSessionId()）；
+//      prevSessionId 回传同样补 preferSid 兜底（前端权限继承不因转写包缺失而断）；
+//   ③ hostAutoContinue 接续标题加时间戳（contTitleStampPre，本地时区 MM-dd HH:mm，用户要求）；
+//   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
+// ★2026-09-30 基线演进 R62→R63（GitHub 三 issue 修复批 #147/#148/#149，增量归因）：
+//   ① #147 rules 条目删除：新增导出纯函数 stripOrphanAnchorsPre（按权威判据 parseAnchors 找
+//      orphan-anchor 空卡、连锚点行一起剥）；applyRuleEditPre 删除分支接线 + removedAnchors 透出
+//      （GUI 与 memory_rules(op=remove) 共用唯一写盘口，独占锚点卡条目不再「整篇拒写删不掉」）；
+//      顺带 import MARKER_RE（双保险校验锚点行身份）；
+//   ② #148 L0 标题：extractL0Pre ①heading ②firstSentence 两分支复用 rules-layer 的
+//      LOG_KIND_TAG_RE_PRE_V1 剥行内 [kind:*] 元数据标记（l0-extract 新增一条对 rules-layer 的
+//      单向 import，无环）——带 kind 的日志不再以 `kind:fact · …` 占 Tier-0 常驻目录；
+//   ③ #149 面板统计：客户端 StatsTab 先解包 data.stats 再读 channels/channelIds/since（服务端
+//      形状 {enabled, stats: snapshot()} 不动）——三通路恒 0 + 空态文案的口径错位修正；
+//   守卫演进：recall-stats S4g2/S4g3 旧判据（「data.channels 恰好 1 次」「StatsTab 内 data.stats=0」）
+//   焊死的是 bug 本身，已带归因改写；p9 注入表 +5 绑定、新增 #147 行为段；l0-extract +5 例。
+// ★2026-09-30 基线演进 R63→R65（PR #150 皮肤 + PR #155 运行时修复，两批合并后重编）：
+//   ① #150：skinAssetRelOfPre/skinAbsPathOfPre 加 deep 参数（路由按 ?deep=1 选暗色素材）；
+//   ② #155：#152 增量开关每轮取值 / #153 默认模型回退共用解析器 / #154 接续创建失败显式报错；
+//   ③ 上述 3.2.5 全部修复保留。
+//   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
+//   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
+eq(createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase(), '4BE9989C5B23B971', 'E3 ★宿主 lib/index.js 基线守恒（sha16 = R65 基线（PR #150 皮肤 + PR #155 运行时修复 两批合并）；R63→R65 放行 = skinAssetRelOfPre/skinAbsPathOfPre 加 deep 参数（素材路由 ?deep=1 选暗色素材）+ #152 增量开关每轮取值 + #153 默认模型回退共用解析器 + #154 接续创建失败显式报错不丢源工作区 + 上述 3.2.5 全部修复保留，理由见上）')
+// R64 (LF-normalized hash): #153 shared profile/block model parser and paired fallback route; #154 source-workspace create guard.
 // ★2026-09-28 计数演进：67→68（新增 skin-library-fetch，见 E3 同批）。语义保留：仍锁路由数不漂移。
 eq(cnt(IX, "path: API[") + cnt(IX, 'path: API.'), 68, 'E4 ★路由数守恒 = 68（2026-09-28 皮肤库路由 +1；其余零新增）')
 console.log('lib/client.js ' + Buffer.byteLength(SRC, 'utf8') + 'B / CRLF ' + (SRC.match(/\r\n/g) || []).length + ' / sha16 ' + createHash('sha256').update(SRC).digest('hex').slice(0, 16).toUpperCase())

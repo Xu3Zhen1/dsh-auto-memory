@@ -6,11 +6,9 @@
  * 关键口径（49 卷 L104 逐字）：姓名/头像来自 team-attribution.json，**个人版不渲染**（不是「一个叫未知的成员」）。
  */
 import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const { buildMemberListPre, filterCardsPre } = await import(pathToFileURL(path.join(ROOT, 'lib', 'wb-sidecar.js')).href)
+const { buildMemberListPre, filterCardsPre } = await import(new URL('../../lib/wb-sidecar.js', import.meta.url).href)
+import { fileURLToPath } from 'node:url'
+const damPath = (rel) => fileURLToPath(new URL('../../' + rel, import.meta.url))
 
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
@@ -125,7 +123,7 @@ eq(JSON.stringify(buildMemberListPre(cards, {})), JSON.stringify(r), '★52 同�
 eq(JSON.stringify(filterCardsPre(cards, { actor: '张伟' })), JSON.stringify(fz), '★53 筛选同输入同输出')
 
 /* ── ⑩ ★「全部成员」下拉的 UI 挂点（48 卷 L69 / 46 卷 L77 逐字「全部成员 ▾」） ── */
-const CL = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
+const CL = readFileSync(damPath('lib/client.js'), 'utf8')
 const hasAllMembers = CL.indexOf('全部成员') >= 0
 ok(hasAllMembers, '★54 ★前端存在「全部成员」下拉文案（48 卷 L69 / 46 卷 L77 逐字）')
 const hasFilterAnchor = CL.indexOf('data-dam-filter') >= 0 || CL.indexOf('data-dam-team-member-filter') >= 0

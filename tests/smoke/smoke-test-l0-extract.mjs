@@ -109,6 +109,35 @@ t('l0: 长条目首句过短时并接到 minChars', () => {
   assert.equal(r.l0, '内容甲。内容乙。内容丙继续说明到很长为止超过十五个字')
 })
 
-// ---------- 汇总 ----------
+// ---------- #148（2026-09-30）：[kind:*] 行内标记不进 L0 标题 ----------
+// memory_log 打的 [kind:fact] 属元数据（rules-layer.js LOG_KIND_TAG_RE_PRE_V1 权威口径），
+// 此前 extractL0Pre 只剥时间戳不剥 kind ⇒ 每条带 kind 的日志以 `kind:fact · …` 进 Tier-0
+// 常驻目录（每轮注入、不参与裁剪）。现 ①heading ②firstSentence 两分支都复用权威正则剥净。
+t('#148 firstSentence 分支剥 [kind:*]（issue #148 最小复现）', () => {
+  const r = extractL0Pre('- 07:50 [kind:fact] 按用户新需求「转速不要忽高忽低」重配 FanControl 曲线（2026-09-30 07:49）。')
+  assert.equal(r.source, 'firstSentence')
+  assert.ok(r.l0.startsWith('按用户新需求'), r.l0)
+  assert.ok(!r.l0.includes('kind:'), r.l0)
+})
+t('#148 heading 分支剥 [kind:*]', () => {
+  const r = extractL0Pre('## [kind:todo] 修风扇曲线防止忽高忽低\n\n- 正文行一二三四五六七八九十。')
+  assert.equal(r.source, 'heading')
+  assert.equal(r.l0, '修风扇曲线防止忽高忽低')
+})
+t('#148 kind 在时间戳之前的形态同样剥净', () => {
+  const r = extractL0Pre('- [kind:preference] 07:50 用户偏好深色主题，面板全部使用暗色适配（后续轮次都应遵守）。')
+  assert.ok(!r.l0.includes('kind:'), r.l0)
+  assert.ok(r.l0.startsWith('用户偏好深色主题'), r.l0)
+})
+t('#148 纯 kind 标题（剥后为空）跳过，落到正文取真内容', () => {
+  const r = extractL0Pre('## [kind:fact]\n\n- 正文行才是真内容一二三四五六七八九十。')
+  assert.equal(r.source, 'firstSentence')
+  assert.ok(r.l0.startsWith('正文行'), r.l0)
+})
+t('#148 反例：方括号但非 kind 标记不受影响', () => {
+  const r = extractL0Pre('- 参考 [附录A] 的结论推进下一步（内容足够长可作标题）。')
+  assert.ok(r.l0.includes('[附录A]'), r.l0)
+})
+
 console.log(`[l0-extract-pre] pass=${pass} fail=${fail}`)
 if (fail) process.exit(1)

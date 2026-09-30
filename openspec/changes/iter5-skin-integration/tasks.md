@@ -1,0 +1,8 @@
+- [x] Fetch upstream and preserve pre-existing work.
+- [x] Read guide, handoff, mapping, contract, design and review evidence.
+- [x] Define integration specification and current-upstream differences.
+- [x] Implement scoped tokens, shell and memory/workbench views; incorporate owner's later visual-reference direction.
+- [x] Integrate existing workflows, focused viewing and safe grouped settings.
+- [x] Validate syntax, source preservation, core interactions and regressions; distinguish 26 reproducible upstream/environment failures.
+- [x] Capture isolated fixture data through real DSH, with desktop and narrow screenshots.
+- [x] Record model-dependent, Desktop/Mica and production-data validation limitations and delivery paths.

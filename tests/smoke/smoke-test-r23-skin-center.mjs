@@ -2,14 +2,21 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
-import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const { SKIN_ASSETS, SKIN_ASSET_KEYS, assetOf } =
-  await import(pathToFileURL(path.join(ROOT, 'lib', 'skin-assets.js')).href)
-const { resolveSkinTheme, composeSkinTheme, buildSkinSlots, skinCenterStatus, SKIN_TOKEN_KEYS, isCssSafe } =
-  await import(pathToFileURL(path.join(ROOT, 'lib', 'skin-center.js')).href)
+const { SKIN_ASSETS, SKIN_ASSET_KEYS, assetOf } = await import(new URL('../../lib/skin-assets.js', import.meta.url).href)
+const { resolveSkinTheme, composeSkinTheme, buildSkinSlots, skinCenterStatus, SKIN_TOKEN_KEYS, isCssSafe } = await import(new URL('../../lib/skin-center.js', import.meta.url).href)
+import { fileURLToPath } from 'node:url'
+import { stripGeneratedSkin } from '../lib/skin-bundle.mjs'
+
+/** 平台无关行尾守恒：存在 CRLF 时不得有裸 LF；全 LF 合法（CI/Linux 检出态）。
+ *  ★2026-09-28：原断言写作 cnt(NL)===cnt(CRNL)（即"必须全 CRLF"），在 Linux CI 上必红——
+ *  索引里是 LF，本机 core.autocrlf=true 才检出 CRLF。守的语义不变：文件不得混合行尾。 */
+const damNoMixedEol = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length
+  const lf = (s.match(/\n/g) || []).length
+  if (crlf === 0) return true      // 全 LF：合法（CI 检出态）
+  return crlf === lf               // 有 CRLF 则不得再有裸 LF
+}
+const damPath = (rel) => fileURLToPath(new URL('../../' + rel, import.meta.url))
 
 // ★2026-09-28 多语言化：源码内联文案已改为 L(甲, 乙)。抽段进 vm 的套件需要同名桩。
 // 注入到各 vm 沙箱：L / L3 / normLocale 桩（闭包捕获 self，不依赖 this）
@@ -42,8 +49,12 @@ function __mkI18nStub(self) {
   return self
 }
 
-const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
-const IX = readFileSync(path.join(ROOT, 'lib', 'index.js'), 'utf8')
+// ★2026-09-28（集成 iter5 皮肤）：本套件断言的是**经典档契约**（全仓计数/唯一性），
+//   而生成区把若干经典组件派生了一份新皮肤版本（SettingsPage→Iter5Settings 等）⇒ 计数翻倍假红。
+//   故此处剥离生成区再断言 —— 不是放宽判据，而是把作用域限定到它真正该守的经典档。
+//   皮肤自身由 smoke-test-iter5-skin.mjs 验收（含「剥离后与基线逐字节一致」的守恒断言）。
+const SRC = stripGeneratedSkin(readFileSync(damPath('lib/client.js'), 'utf8'))
+const IX = readFileSync(damPath('lib/index.js'), 'utf8')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']')
@@ -81,9 +92,9 @@ const h = function (type, props) { const rest = Array.prototype.slice.call(argum
 const _iS = SRC.indexOf('    // ===================== S2-skin:begin ====================='), _iE = SRC.indexOf(MEND)
 const S2SEG = SRC.slice(_iS, _iE)
 const _iR = SRC.indexOf('function fetchSkinCenter')
-const _iRend = SRC.indexOf('\n    }\r\n', SRC.indexOf('function SkinSlotRows'))
+const _iRend = SRC.indexOf('\n    }', SRC.indexOf('function SkinSlotRows'))
 ok(_iRend > 0, 'A0 ★R23 段终点锚可定位')
-const R23SEG = SRC.slice(_iR, _iRend + 8)
+const R23SEG = SRC.slice(_iR, _iRend + 6)
 const SEG = S2SEG + '\r\n' + R23SEG
 const sandbox = { console, h, locale: 'zh', String, Object, Array, JSON, Date, useTick: () => [0, () => {}], apiGet: () => Promise.resolve(null), API: {}, useState: (v) => [typeof v === 'function' ? v() : v, () => {}], useEffect: () => {} }
 sandbox.globalThis = sandbox
@@ -114,7 +125,16 @@ eq(SKIN_TOKEN_KEYS.length, 42, 'D9 公开 token 清单 = 42（12 卷 §四）')
 
 /* ── E. 守恒 ── */
 ok(cnt(SRC, 'data-dam-region') === cnt(SRC, 'data-dam-region') && !/data-dam-block/.test(SEG.slice(SEG.indexOf('function SkinCenterPanel'))), 'E1 ★皮肤新段不引入 block 锚')
-ok(cnt(SRC, '\n') === cnt(SRC, '\r\n'), 'E2 纯 CRLF')
+ok(damNoMixedEol(SRC), 'E2 纯 CRLF')
+
+/* ── F. 皮肤选择中心的「开发版」署名（★2026-09-28：换装社区作者 iter5 实现，PR #146） ──
+ *   判据三件：①开发版条目带 credit 字段 ②悬停 title 含负责人 ③卡片内显式署名锚点存在。
+ *   口径：按所有者 2026-09-28 裁定，用户可见名统一为「新款」（不再用旧内部代号「开发版」）。 */
+ok(/id: 'v4'[^}]*credit: 'Minervaowl7'/.test(SRC), 'F1 ★开发版条目带 credit（皮肤负责人署名）')
+ok(/title: it\.credit[\s\S]{0,220}?皮肤负责人：/.test(SRC), 'F2 ★悬停提示含「皮肤负责人」（鼠标挪上去可见）')
+ok(/data-dam-skin-credit'/.test(SRC), 'F3 ★卡片内显式署名锚点存在（触屏/键盘用户也能看到）')
+ok(!SRC.includes("L('开发版'") && !SRC.includes('开发版（新版 UI）'), 'F4 ★按钮/标签不再用「开发版」旧名（所有者裁定统一称「新款」）')
+ok(/L\('新款', 'New UI'\)/.test(SRC) && SRC.includes('新款（新版 UI）'), 'F5 按钮与卡片均用「新款」')
 console.log('lib/client.js ' + Buffer.byteLength(SRC, 'utf8') + 'B / CRLF ' + (SRC.match(/\r\n/g) || []).length + ' / sha16 ' + createHash('sha256').update(SRC).digest('hex').slice(0, 16).toUpperCase())
 console.log('lib/index.js ' + Buffer.byteLength(IX, 'utf8') + 'B / sha16 ' + createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase())
 console.log('PASS ' + p + ' / FAIL ' + f)

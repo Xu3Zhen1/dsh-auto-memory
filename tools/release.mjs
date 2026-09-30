@@ -81,7 +81,15 @@ for (const entry of ['cordis.patch.yml', 'README.md', 'README.zh-CN.md', 'LICENS
   // ★2026-09-21 补 CHANGELOG.md：两份 README **各有 3 处**链接到 `CHANGELOG.md`（导航条 / 文末链接区，
   //   共 6 处），但此文件此前**从不在复制清单里**，REL 仓也从未有过它 ⇒ GitHub 上点「Changelog」
   //   一直是 **404**（`git log --all -- CHANGELOG.md` 为空可证）。发版脚本漏拷，属真断链。
-  'CHANGELOG.md', 'skins']) {
+  'CHANGELOG.md', 'skins',
+  // ★2026-09-29（3.2.4 插件图标批）：宿主新增插件元数据机制（`@deepseek-ai/dsh-app-boot` 的
+  //   readPluginMeta / iconOf / dictionariesOf）—— 插件用 package.json 的 `icon` 字段 +
+  //   `locale/<lang>.json` 在设置页插件行显示图标与中/英标题描述。
+  //   ⚠️ 该机制由**宿主读盘**（icon 读成 data URL 塞进 <img>），文件必须真在安装包里：
+  //   此前复制清单没有这两项 ⇒ 图标只存在于开发树、发布包里缺 icon.svg ⇒
+  //   宿主 iconOf 校验失败（existsSync/statSync）⇒ 整条元数据读不到、界面上**永远无图标**
+  //   （与 CHANGELOG.md / tools/lib / build-iter5-skin.mjs 同类漏网：功能做了但发布物里没有）。
+  'icon.svg', 'locale']) {
   const s = path.join(DEV, entry), d = path.join(REL, entry)
   if (existsSync(s)) cpSync(s, d, { recursive: true })
 }
@@ -102,6 +110,35 @@ for (const entry of ['cordis.patch.yml', 'README.md', 'README.zh-CN.md', 'LICENS
 for (const toolFile of 'run-smoke.mjs,release.mjs'.split(',')) {
   const src = path.join(DEV, 'tools', toolFile)
   if (!existsSync(src)) continue
+  mkdirSync(path.join(REL, 'tools'), { recursive: true })
+  cpSync(src, path.join(REL, 'tools', toolFile))
+}
+// ★2026-09-28（issue #144 附带发现 / Astra 反馈）：`tools/lib/` 此前不在任何拷贝清单里 ⇒
+//   发布树里**从来没有** tools/lib/appearance-scan.mjs，而同一次发布却带着引用它的两处：
+//   ① `tests/smoke/smoke-test-r15-left-rail.mjs` 第 8 行 `import { scanAppearance … }
+//      from '../../tools/lib/appearance-scan.mjs'` ⇒ 发布树里 r15 必然 ERR_MODULE_NOT_FOUND（CI 红）；
+//   ② `docs/SKIN-GUIDE.md` §10「验收纪律」第 1 步就是 `node tools/lib/appearance-scan.mjs`，
+//      而 docs/ 随包进 npm tarball（已实测 3.2.1 包内含 SKIN-GUIDE 但无 tools/lib）⇒
+//      第三方照白皮书执行第一步即断（Astra 反馈的原症状）。
+//   本目录是**共享度量模块**（扫描器与被测套件共用同一实现，杜绝两份实现漂移），属发布线必需。
+//   一次性递归拷贝（含未来同目录新增模块，避免同类漏网再次发生）。
+if (existsSync(path.join(DEV, 'tools', 'lib'))) {
+  cpSync(path.join(DEV, 'tools', 'lib'), path.join(REL, 'tools', 'lib'), { recursive: true })
+}
+// ★2026-09-29（与上面 tools/lib 同一类漏网，发版前实测抓到）：`tools/build-iter5-skin.mjs` 是
+//   新款皮肤的**生成器**（把 skins/iter5/ 嵌入 lib/client.js 的受控区间），本仓另有**三处**在
+//   发布树里引用它，此前一处都不在拷贝清单 ⇒ 全部必然断：
+//   ① `tests/smoke/smoke-test-iter5-skin.mjs` 末段用它在临时目录里跑「LF/CRLF 幂等」自证
+//      ⇒ 发布树里必然 ENOENT（实测：staging 内直接跑该套件即报 open …\tools\build-iter5-skin.mjs）；
+//   ② `skins/iter5/README.md`（§源码与生成）把 `node tools/build-iter5-skin.mjs` 写成**再生成入口**，
+//      而 skins/ 随包发布 ⇒ 第三方照做即断；
+//   ③ `docs/SKIN-GUIDE.md` 的验收纪律同样要求跑它。
+//   即：皮肤源码进了包，**重新生成它的工具却没进** —— 与 appearance-scan 完全同型（发布物自相矛盾）。
+//   闸门安全性（已核对）：残留闸门 scanTargets 与凭据闸门 walk 面都不含 tools/，且 tools/ 不在
+//   transformFiles 里 ⇒ 本文件以原样入包；其内不写字面 `-pre.js` 引用，不会触发残留判断。
+for (const toolFile of 'build-iter5-skin.mjs'.split(',')) {
+  const src = path.join(DEV, 'tools', toolFile)
+  if (!existsSync(src)) { console.error('[release] ❌ tools/' + toolFile + ' 缺失 — 发布树将无法重新生成皮肤'); process.exit(1) }
   mkdirSync(path.join(REL, 'tools'), { recursive: true })
   cpSync(src, path.join(REL, 'tools', toolFile))
 }
@@ -267,41 +304,33 @@ for (const [from, to] of libRenameMap) {
     process.exit(1)
   }
 }
-// python 文件名重命名(worker_pre_v1.py → worker_v1.py 等) + 相互 import 改写
-const pyRenameMap = [
-  ['worker_semantic_pre_v1.py', 'worker_semantic_v1.py'],
-  ['worker_pre_v1.py', 'worker_v1.py'],
-  ['m7_embedding_pre_v1.py', 'm7_embedding_v1.py'],
-  ['m7_activation_features_pre_v2.py', 'm7_activation_features_v2.py'],
-]
+// ★2026-09-28 去 pre 收官：**源码名即发布名，发布退化为纯拷贝**。
+//   本段原做两件事：①python 四个文件 `*_pre_vN.py` → `*_vN.py` 并改写相互 import；
+//   ②策略工件 `*_pre_vN.json` → `*_vN.json`。留着它是**有害**的：
+//     · 改名那半仍会跑，改写那半（下方 textReplace 替换表）已空 ⇒ **文件改名了、代码引用没改**
+//       —— 发布包里 20 处引用指向不存在的 `*_pre_*` 文件（实证：已发布 3.2.1 的
+//       `lib/python-sidecar-client.js` 默认路径 `worker_pre_v1.py` 不存在 ⇒ sidecar spawn ENOENT
+//       → 静默降级 unavailable；`lib/index.js` 策略两处候选路径全落空 → JS 语义臂静默拿不到策略）。
+//     · 现在源码树里已无任何 pre 文件（文件与引用一并清除，configHash 已按 Python 同款算法重算），
+//       改名逻辑失去对象，只剩「把别人改坏」的风险。
+//   保留一行**哨兵**：若将来 pre 文件意外回流，此处立即报错而不是悄悄改名。
+const preLeftovers = []
 if (existsSync(path.join(REL, 'python'))) {
   for (const f of readdirSync(path.join(REL, 'python'))) {
-    if (!f.endsWith('.py')) continue
-    const p2 = path.join(REL, 'python', f)
-    let t = readFileSync(p2, 'utf8')
-    let changed = false
-    for (const [from, to] of pyRenameMap) {
-      const stemFrom = from.replace(/\.py$/, '')
-      const stemTo = to.replace(/\.py$/, '')
-      if (t.includes(stemFrom)) { t = t.split(stemFrom).join(stemTo); changed = true }
-    }
-    if (changed) writeFileSync(p2, t)
+    if (/_pre_v\d/.test(f)) preLeftovers.push('python/' + f)
   }
-  for (const [from, to] of pyRenameMap) {
-    const fp = path.join(REL, 'python', from)
-    if (existsSync(fp)) { cpSync(fp, path.join(REL, 'python', to)); rmSync(fp) }
-  }
-  // 策略工件文件名(recall_intent_lr_pre_v1.json / activation_policy_pre_v2.json)
-  // 同时覆盖 lib/policies/ 与 python/policies/ 两处副本
   for (const polDir of [path.join(REL, 'lib', 'policies'), path.join(REL, 'python', 'policies')]) {
     if (!existsSync(polDir)) continue
     for (const f of readdirSync(polDir)) {
-      if (f.includes('_pre_')) {
-        cpSync(path.join(polDir, f), path.join(polDir, f.replace(/_pre_v(\d)/g, '_v$1')))
-        rmSync(path.join(polDir, f))
-      }
+      if (f.includes('_pre_')) preLeftovers.push(path.relative(REL, path.join(polDir, f)))
     }
   }
+}
+if (preLeftovers.length) {
+  console.error('[release] ❌ 源码树出现 pre 残留(发布线已不再改名，这些文件不会被自动转换):')
+  for (const f of preLeftovers) console.error('   ' + f)
+  console.error('   处置:按「源码名即发布名」直接改名为裸名,并同步所有引用与策略 configHash。')
+  process.exit(1)
 }
 let totalReplaced = 0
 // 转换面 = 两个主文件 + 4 个根 smoke + 全部 lib 模块 + 策略工件 + 全部 python 文件
@@ -359,7 +388,15 @@ const relPkg = {
   version,
   type: 'module',
   main: 'lib/index.js',
-  exports: { '.': './lib/index.js', './client': './lib/client.js', './package.json': './package.json' },
+  // ★2026-09-29（3.2.4）：插件图标 + 本地化元数据。宿主 `readPluginMeta` 读**发布包**里的
+  //   package.json（icon 字段）与 icon.svg/locale 文件；缺任一项 ⇒ 设置页插件行无图标/标题。
+  icon: './icon.svg',
+  exports: {
+    '.': './lib/index.js',
+    './client': './lib/client.js',
+    './package.json': './package.json',
+    './locale/*.json': './locale/*.json',
+  },
   // #20:python/ 运行时(worker+语义引擎+策略)必须随包;bench(539MB 模型夹具)与 __pycache__ 永久排除
   // #106:发布物剔除非运行时负载 —— docs/internal(内部审计/规划/分诊)与 .bak/.bak-* 一律不进包
   // ★2026-09-23(3.1.6) 补两处**实测到的真实泄漏**（dry-run 构建里点名核对得到）：
@@ -370,7 +407,12 @@ const relPkg = {
   //   ② 原 `!docs/**/*.bak` 与 `!docs/**/*.bak-*` 两条**依赖 npm 的 glob 语义**，而 `docs/**`
   //      中途另起一段的写法在部分 npm 版本上不生效 ⇒ 统一用 `!**/*.bak*` 一条兜住所有层级
   //      （`.bak` 与 `.bak-*` 都被覆盖），再补一条 `!lib/*.m8b*bak` 覆盖上述无点形态。
-  files: ['lib', 'python', 'docs', 'skins', 'cordis.patch.yml', '!python/bench', '!python/__pycache__', '!docs/internal', '!**/*.bak*', '!lib/*.m8b*bak*'],
+  files: ['lib', 'python', 'docs', 'skins', 'icon.svg', 'locale', 'cordis.patch.yml', '!python/bench', '!python/__pycache__', '!docs/internal',
+    // ★2026-09-28 跟进社区作者 PR #146：补七条**设计稿/演示稿**排除（防止本地未跟踪材料随包发布）。
+    //   与 package.json 的 files 同源，两处必须一致 —— 发布包由本文件的 files 决定，package.json 是给 npm 的声明。
+    '!docs/ui-demo-*', '!docs/ui-demo', '!docs/ui-redesign-*', '!docs/ui-rebuild-handoff-*',
+    '!docs/teamwork-impl/concept', '!docs/teamwork-impl/_shots', '!**/node_modules',
+    '!**/*.bak*', '!lib/*.m8b*bak*'],
   dsh: {
     bundle: { patch: './cordis.patch.yml' },
     client: {

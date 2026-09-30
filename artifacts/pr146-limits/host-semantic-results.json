@@ -1,0 +1,44 @@
+{
+  "checks": [
+    "Real host discovers peer in configured DSH_HOME",
+    "Real host settings refreshed after installation",
+    "Idle real host does not invent pending continuation",
+    "Real host rejects continuation without a pending edge"
+  ],
+  "results": {
+    "detect": {
+      "assetPresent": true,
+      "peerPresent": true,
+      "ready": true,
+      "pythonInt8Present": false,
+      "assetBytes": 118308185,
+      "assetPath": "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\models\\js-semantic\\multilingual-e5-small\\onnx\\model_quantized.onnx",
+      "resolvedTier": "c1",
+      "deep": {
+        "scanned": true,
+        "foundDirs": [
+          "C:\\Users\\李云龙\\AppData\\Local\\Temp\\dsh-iter5-qa-20260928\\profiles\\semantic-qa\\node_modules\\@huggingface\\transformers"
+        ],
+        "integrated": true
+      },
+      "recommendation": "setup-python"
+    },
+    "continueState": {
+      "enabled": false,
+      "threshold": 0.75,
+      "armed": null,
+      "executing": false,
+      "rejectedEdgeAt": 0,
+      "lastRunAt": 0,
+      "lastOk": null,
+      "error": ""
+    },
+    "staleContinue": {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "error": "no pending auto-continue"
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "C:\\Users\\李云龙\\.codex\\worktrees\\native-ui\\dsh-auto-memory\\skins\\iter5\\skin.css",
+    "line": 316,
+    "snippet": "border-left:3px solid var(--i5-fill)"
+  }
+]

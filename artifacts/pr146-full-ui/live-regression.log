@@ -1,0 +1,37 @@
+PASS Real host writes isolated from personal memory
+PASS Skin mounted through actual conversation.view
+PASS Inner scroller ends above host composer
+PASS Real page home renders
+PASS Real page library renders
+PASS Real page handoff renders
+PASS Real page calendar renders
+PASS Real page skills renders
+PASS Real page recall renders
+PASS Real page mindmap renders
+PASS Real page storage renders
+PASS Real page settings renders
+PASS Engine radio writes immediately, single config key
+PASS Engine radio is outside dirty drafts
+PASS Actual draft save only writes changed preference
+PASS Failed write retains browser draft
+PASS Cancel restores saved browser value
+PASS WAI-APG settings tab keyboard navigation
+PASS Append note uses real note endpoint
+PASS Memory search uses real recall with requested limit
+PASS Calendar add round-trip renders saved event
+PASS Calendar completion persisted on host
+PASS Confirmed calendar deletion persisted
+PASS A/P/S/H/E feedback accepted by actual host
+PASS Feedback is readable from review queue
+PASS Focus mode expands inside real host
+PASS Skin follows host dark-theme attribute
+PASS Home 768 no horizontal overflow
+PASS Settings 768 no horizontal overflow
+PASS Narrow nav moves focus to close
+PASS Narrow nav restores focus
+PASS Home 390 no horizontal overflow
+PASS Settings 390 no horizontal overflow
+PASS Narrow nav moves focus to close
+PASS Narrow nav restores focus
+PASS Classic switch removes new skin and injected stylesheet
+PASS No uncaught page errors

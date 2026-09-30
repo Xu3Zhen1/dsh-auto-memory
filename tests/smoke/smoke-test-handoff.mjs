@@ -8,7 +8,7 @@
  *   G3 writeHandoffLedger+readLatestHandoff:同秒双写 -b 后缀防撞,最新篇胜出
  *   G4 renderMemoryDynamic:白板+交接注入在日志段之前 / handoffEnabled=false 隐藏 / 超预算硬截断
  */
-import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync, mkdtempSync } from 'node:fs'
+import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync, mkdtempSync, statSync } from 'node:fs'
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -151,7 +151,7 @@ const grab = (name) => { // 逐行扫描+(){} 混合配平(兼容 Object.freeze 
   }
   return buf
 }
-const helpers = ['DEFAULT_PROMPT_LAYERS', 'neutralizePromptTemplateVars', 'truncateHead', 'truncateLinesBounded', 'stripSensitiveSections', 'sanitizeForInjection', 'scrubJunkLines', 'reflectionDigest', 'mojibakeDensity', 'MOJIBAKE_RE', 'hasStutter', 'BASE64_LINE', 'todayStr']
+const helpers = ['DEFAULT_PROMPT_LAYERS', 'neutralizePromptTemplateVars', 'truncateHead', 'truncateLinesBounded', 'stripSensitiveSections', 'sanitizeForInjection', 'scrubJunkLines', 'reflectionDigest', 'mojibakeDensity', 'MOJIBAKE_RE', 'detectStutter', 'hasStutter', 'BASE64_LINE', 'todayStr'] // ★2026-09-29 hasStutter 改调 detectStutter(P0-2 语种盲区修复),抽取清单同步补符号,否则 eval 沙箱 ReferenceError
 // ★T7-a（2026-09-20 · 上游 #86-4）：水位/接续默认值已抽为**模块级常量**，本套件同样是
 //   "源码抽取 + new Function"执行 `renderMemoryDynamic`，故必须显式注入这两个自由变量，
 //   否则抛 `ReferenceError: DEFAULT_WATER_LEVEL_THRESHOLD is not defined`（实测已发生）。
@@ -233,7 +233,18 @@ writeFileSync(path.join(fakeHome, 'settings.yaml'), [
   '    - id: deepseek-v4.1-flash-expires-on-0910',
   '      contextWindow: 1000000',
 ].join(String.fromCharCode(10)))
-const waterDeps = { parseModelWindowsPre, pickWindowPre }
+// ★2026-09-28 修 issue #144-B：resolveWaterWindow 的读盘改为 `readSettingsTextPre()`（活设置文件
+//   定位器：profiles/<p>/cordis.patch.yml 优先、老 settings.yaml 兜底）。本套件是**抽取方法体执行**，
+//   须显式注入该依赖 —— 这里按「假 home 下的老路径」模拟（等价于未迁移环境）；新布局定位器本体
+//   另在 ④ 段专测（用真实 profiles 目录形状的夹具）。
+const readSettingsTextPre = async () => {
+  for (const fp of [path.join(fakeHome, 'settings.yaml')]) {
+    try { const t = await readFile(fp, 'utf8'); if (t && t.length) return t } catch (e) {}
+  }
+  return ''
+}
+const parseAgentDefaultModelPre = new Function('return (' + extractFn('function parseAgentDefaultModelPre(text) {') + ')')()
+const waterDeps = { parseModelWindowsPre, pickWindowPre, readSettingsTextPre, parseAgentDefaultModelPre }
 const fakeRw = makeWaterFake({ waterLevelWindowTokens: 0 }, [])
 const resolveWaterWindow = bindMethod("async resolveWaterWindow(providerOverride = '', modelOverride = '') {", fakeRw, Object.assign({ dshHome: () => fakeHome }, waterDeps))
 const w1 = await resolveWaterWindow()
@@ -245,9 +256,57 @@ ok(w2.window === 1000000, '60s 缓存生效')
 const fakeM = makeWaterFake({ waterLevelWindowTokens: 777 }, [])
 const resolveM = bindMethod("async resolveWaterWindow(providerOverride = '', modelOverride = '') {", fakeM, Object.assign({ dshHome: () => fakeHome }, waterDeps))
 ok((await resolveM()).window === 777 && (await resolveM()).source === 'manual', '手动覆盖优先于自动检测')
+// ★2026-09-28（#144-B）：该断言原为「dshHome 指向不存在的目录 ⇒ 读不到 ⇒ 回退 131072」。
+//   读盘改经 readSettingsTextPre() 后，「读不到」由**该依赖**表达（全候选缺失 ⇒ 空串），
+//   故这里显式注入"永远空"的版本 —— 语义不变（设置文件不可用 ⇒ 回退保守值），
+//   且新增一条：**有文件但解析不到该模型** 时也应回退（下方 no-home 用真实定位器验证）。
 const fakeF = makeWaterFake({ waterLevelWindowTokens: 0 }, [])
-const resolveF = bindMethod("async resolveWaterWindow(providerOverride = '', modelOverride = '') {", fakeF, Object.assign({ dshHome: () => path.join(tmpRoot, 'no-home') }, waterDeps))
-ok((await resolveF()).window === 131072 && (await resolveF()).source === 'fallback', '检测失败回退 131072')
+const resolveF = bindMethod("async resolveWaterWindow(providerOverride = '', modelOverride = '') {", fakeF, Object.assign({ dshHome: () => path.join(tmpRoot, 'no-home') }, waterDeps, { readSettingsTextPre: async () => '' }))
+ok((await resolveF()).window === 131072 && (await resolveF()).source === 'fallback', '检测失败回退 131072（设置文件不可用）')
+
+// ④ ★issue #144-B 专测：活设置文件定位器（真实新布局 profiles/<p>/cordis.patch.yml）
+console.log('[handoff] G5.6 活设置文件定位器(#144-B 新布局兼容)')
+{
+  const home2 = mkdtempSync(path.join(os.tmpdir(), 'wl-home2-'))
+  mkdirSync(path.join(home2, 'profiles', 'web'), { recursive: true })
+  writeFileSync(path.join(home2, 'profiles', 'web', 'cordis.patch.yml'), [
+    '- id: agent-default-model',
+    '  name: "@deepseek-ai/dsh-agent-default-model"',
+    '  config:',
+    '    provider: opgo',
+    '    model: deepseek-v4.1-flash',
+    '    reasoningEffort: high',
+    '- id: llm-pi-ai',
+    '  name: "@deepseek-ai/dsh-llm-pi-ai"',
+    '  config:',
+    '    providers:',
+    '      opgo:',
+    '        models:',
+    '          - id: deepseek-v4.1-flash',
+    '            contextWindow: 1000000',
+  ].join(String.fromCharCode(10)))
+  // 定位器本体（与 lib/index.js settingsFileCandidatesPre 同款逻辑：新布局优先、老路径兜底）
+  // ★注意两点：①bindMethod 的第二参是 this、第三参才是注入的闭包符号 —— dshHome 属后者；
+  //   ②函数内 readdirSync/statSync/process 也不在自动注入表里，一并补进 extra。
+  const bindCands = bindMethod('settingsFileCandidatesPre() {', {},
+    { dshHome: () => home2, readdirSync: readdirSync, statSync: statSync, process: { env: {} } })
+  const cands = bindCands()
+  ok(Array.isArray(cands) && cands.length >= 2, '候选列表长度 ≥2（新布局 + 老路径兜底）')
+  ok(String(cands[0]).includes(path.join('profiles', 'web')), '★首位命中新布局 profiles/web/cordis.patch.yml（实测 ' + String(cands[0]).split(path.sep).slice(-2).join('/') + '）')
+  ok(String(cands[cands.length - 1]).endsWith('settings.yaml'), '末位保留 settings.yaml 兜底')
+  // 读取器：按「逐候选尝试、首个可读即用」语义直测（readSettingsTextPre 的完整定义在 lib/index.js；
+  //   此处按同款语义就地执行——定位器正确性已由上方 cands 断言覆盖，本段验证读到的**内容**）。
+  const readFirst = async (list) => {
+    for (const fp of list) {
+      try { const t = await readFile(fp, 'utf8'); if (t && t.length) return t } catch (e) {}
+    }
+    return ''
+  }
+  const text = await readFirst(cands)
+  ok(text.indexOf('agent-default-model') >= 0, '新布局文件读到了 agent-default-model 段')
+  ok(/provider:\s*opgo/.test(text) && /model:\s*deepseek-v4\.1-flash/.test(text), '段内 provider/model 可解析')
+  ok((await readFirst([path.join(home2, 'nope', 'x.yml')])) === '', '全候选缺失 ⇒ 空串（不抛，供调用方走 fallback）')
+}
 
 console.log('[handoff] G6 M-CM4 水位感知(官方 token 公式+compaction 事件)')
 function makeWaterFake(opts, ledgerCalls) {

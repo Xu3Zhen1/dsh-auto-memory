@@ -74,7 +74,15 @@ ck('S1 _workbenchCwd 读 config.workbenchRoot',
   /_workbenchCwd\(\) \{\r?\n\s+const raw = String\(this\.config\.workbenchRoot/.test(idx))
 ck('S1 路径收窄到 dshHome 之下（非法 ⇒ fail-soft 回默认）',
   /path\.relative\(dshHome\(\), p\)[\s\S]{0,200}?return fallback/.test(idx))
-ck('S1 设置页有「工作台工作区」路径项 + 搜索索引', /set\('workbenchRoot'/.test(cli) && /key: 'workbenchRoot'/.test(cli))
+// ★2026-09-28 口径收窄：本条原断言 `set('workbenchRoot')` **且** `key: 'workbenchRoot'` 同时成立，
+//   把两件事混在一起——（a）设置页有工作台目录项（b）向导里也有同名开关。
+//   向导侧的目录项已被**更合理的布尔开关** `workbenchEnabled` 取代：旧写法把**目录路径（字符串）**
+//   当开关用，而向导开关形态走 `!!c[key]` ⇒ 非空值恒判「开」，点一下还会把布尔写进路径配置
+//   （同一类缺陷此前在 workbenchPeriod 上已修过一次）。故本守卫按其**真实意图**收窄为两条：
+ck('S1 设置页有「工作台工作区」路径项 + 搜索索引',
+  /set\('workbenchRoot'/.test(cli) && /cfg\.workbenchRoot/.test(cli))
+ck('S1 向导的工作台开关用布尔键 workbenchEnabled（不把路径当开关）',
+  /key: 'workbenchEnabled'/.test(cli) && !/key: 'workbenchRoot'/.test(cli))
 ck('S1 目录选择器按调用方指定的键回填（不串改另一个设置）',
   /function openBrowser\(targetKey\)/.test(cli) && /set\(_targetKey, d\.dir\)/.test(cli) &&   /set\(browseKey \|\| 'memoryRoot', browsePath\)/.test(cli))
 ck('S1 设置页占位显示 aik_auto_memory_use（留空=自动）',

@@ -1,16 +1,11 @@
 /** R30 · 配置层：56 卷 §三 4 条验收判据 + §二 5 项客户操作面（真 import 真调用）。 */
-import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+const { LAYOUT_REGIONS, LAYOUT_SLOTS, LAYOUT_BLOCK_KINDS, AUTHOR_SURFACE_KEYS, LAYOUT_CONFIG_VERSION, LAYOUT_CONFIG_FILE } = await import(new URL('../../lib/layout-config.js', import.meta.url).href)
+const { defaultLayoutConfig, normalizeLayoutConfig, SLOT_REGION_OF } = await import(new URL('../../lib/layout-config.js', import.meta.url).href)
 import { readFileSync } from 'node:fs'
-// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const {
-  LAYOUT_REGIONS, LAYOUT_SLOTS, LAYOUT_BLOCK_KINDS, AUTHOR_SURFACE_KEYS, LAYOUT_CONFIG_VERSION, LAYOUT_CONFIG_FILE,
-} = await import(pathToFileURL(path.join(ROOT, 'lib', 'layout-config.js')).href)
-const { defaultLayoutConfig, normalizeLayoutConfig, SLOT_REGION_OF } =
-  await import(pathToFileURL(path.join(ROOT, 'lib', 'layout-config.js')).href)
-const IX = readFileSync(path.join(ROOT, 'lib', 'index.js'), 'utf8')
-const CL = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
+import { fileURLToPath } from 'node:url'
+const damPath = (rel) => fileURLToPath(new URL('../../' + rel, import.meta.url))
+const IX = readFileSync(damPath('lib/index.js'), 'utf8')
+const CL = readFileSync(damPath('lib/client.js'), 'utf8')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']')

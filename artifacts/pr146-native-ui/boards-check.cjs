@@ -1,0 +1,48 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{createRequire}=require('node:module')
+const {chromium}=createRequire('C:/Users/李云龙/dsh-auto-memory/docs/ui-redesign-2026-09-25/design-demos/package.json')('playwright')
+;(async()=>{
+ const browser=await chromium.launch({executablePath:path.join(process.env.LOCALAPPDATA,'ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-win64/chrome-headless-shell.exe'),headless:true})
+ const page=await browser.newPage({viewport:{width:1440,height:900}}),checks=[],errors=[]
+ page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.dismiss())
+ const check=(name,ok)=>{assert(ok,name);checks.push(name)}
+ try{
+ const url=fs.readFileSync(path.join(process.env.TEMP,'native-ui-host.log'),'utf8').match(/http:\/\/127\.0\.0\.1:19388\/\?token=\S+/)?.[0];assert(url)
+ await page.goto(url)
+ if(await page.getByRole('button',{name:'继续',exact:true}).count())await page.getByRole('button',{name:'继续',exact:true}).click()
+ await page.waitForTimeout(1200)
+ if(await page.getByRole('button',{name:'稍后配置',exact:true}).count())await page.getByRole('button',{name:'稍后配置',exact:true}).click()
+ if(await page.locator('[data-dam-tour]').count())await page.keyboard.press('Escape')
+ const config=await page.evaluate(async()=> (await(await fetch('/api/dsh-auto-memory/config')).json()).config)
+ check('isolated roots',config.memoryRoot.includes('dsh-iter5-qa-20260928')&&config.userMemoryDir.includes('dsh-iter5-qa-20260928'))
+ await page.getByRole('treeitem',{name:'Iter5 隔离验收',exact:true}).click()
+ await page.getByRole('treeitem',{name:/^UI 集成隔离验收/}).first().click()
+ await page.getByRole('tab',{name:'记忆',exact:true}).click()
+ if(await page.getByRole('button',{name:'开发版',exact:true}).isVisible())await page.getByRole('button',{name:'开发版',exact:true}).click()
+ const originalBoardMode=config.boardMode
+check('board mode is an explicit string',typeof originalBoardMode==='string')
+try{
+await page.evaluate(async()=>{const r=await fetch('/api/dsh-auto-memory/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({boardMode:'graph'})});if(!r.ok)throw Error('QA board-mode update failed')})
+await page.getByRole('tab',{name:'白板看板',exact:true}).click()
+await page.locator('[data-dam-kanban-view]').waitFor();await page.waitForTimeout(500)
+check('real board cards present',await page.locator('[data-dam-kx-card]').count()>0)
+if(process.env.NATIVE_CAPTURE==='1')await page.screenshot({path:path.join(__dirname,'board-native.png')})
+await page.locator('[data-dam-kx-card]').first().click();await page.locator('[data-dam-kx-drawer]').waitFor()
+check('board card opens actual detail drawer',await page.locator('[data-dam-kx-drawer]').isVisible())
+if(process.env.NATIVE_CAPTURE==='1')await page.screenshot({path:path.join(__dirname,'board-detail.png')})
+await page.evaluate(()=>localStorage.setItem('dam-wbg-enabled','1'));await page.reload();await page.waitForTimeout(800)
+if(!await page.getByRole('treeitem',{name:/^UI 集成隔离验收/}).first().isVisible())await page.getByRole('treeitem',{name:'Iter5 隔离验收',exact:true}).click()
+await page.getByRole('treeitem',{name:/^UI 集成隔离验收/}).first().click();await page.getByRole('tab',{name:'白板画布',exact:true}).click()
+await page.locator('[data-dam-wbg-wrap]').waitFor();await page.waitForTimeout(500)
+check('optional graph renders real source nodes',await page.locator('[data-dam-wbg-node]').count()>0)
+ await page.getByRole('button',{name:'适应',exact:true}).click();await page.waitForTimeout(250)
+if(process.env.NATIVE_CAPTURE==='1')await page.screenshot({path:path.join(__dirname,'canvas-native.png')})
+await page.locator('[data-dam-wbg-node]').first().click({timeout:5000});check('canvas detail is reachable',await page.locator('[data-dam-wbg-side]').isVisible())
+ await page.locator('[data-dam-wbg-node]').first().focus();await page.keyboard.press('Enter');check('canvas keyboard toggles selection',await page.locator('[data-dam-wbg-side]').count()===0)
+ await page.keyboard.press('Enter');check('canvas keyboard reopens detail',await page.locator('[data-dam-wbg-side]').isVisible())
+ check('canvas stays above host composer',await page.locator('[data-dam-wbg-wrap]').evaluate(el=>{const composer=document.querySelector('[data-composer-card]');return !composer||el.getBoundingClientRect().bottom<=composer.getBoundingClientRect().top}))
+if(process.env.NATIVE_CAPTURE==='1')await page.screenshot({path:path.join(__dirname,'canvas-detail.png')})
+}finally{await page.evaluate(async(mode)=>{localStorage.removeItem('dam-wbg-enabled');const r=await fetch('/api/dsh-auto-memory/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({boardMode:mode})});if(!r.ok)throw Error('QA board-mode restore failed')},originalBoardMode)}
+check('no runtime errors',errors.length===0)
+fs.writeFileSync(path.join(__dirname,'boards-check.json'),JSON.stringify({checks,errors},null,2));console.log(JSON.stringify({passed:checks.length,errors}))
+}finally{await browser.close()}
+})().catch(e=>{console.error(e.message);process.exitCode=1})

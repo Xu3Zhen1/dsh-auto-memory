@@ -1,0 +1,5 @@
+- [x] Read all supplied review, candidate, preview, validation and screenshot materials; verify baseline.
+- [x] Capture current real-host baseline with isolated data.
+- [x] Refine source styles, memory reading and home hierarchy; regenerate bundle.
+- [x] Run real-host interaction and screenshot checks, relevant smoke and full regression comparison.
+- [x] Record measured results and limitations; push to PR #146.

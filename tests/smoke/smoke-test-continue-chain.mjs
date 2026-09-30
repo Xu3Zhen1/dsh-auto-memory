@@ -163,6 +163,14 @@ ok(HSRC.includes("url.searchParams.get('sessionId')") && HSRC.includes('autoCont
 ok(/setAcConfirm\(\{ ratio: Number\(arm\.ratio\) \|\| 0[\s\S]{0,220}?wall: Number\(arm\.wall\) \|\| 0/.test(SRC),
   'G14 确认卡把双口径 ring/wall 拷进 acConfirm(宿主透出但这里丢了 → 那行永不渲染)')
 
+// —— G15(2026-09-28 修「接续必须搭线」):宿主兜底接续后,前端补 sessions.open 把发件人切到新会话 ——
+ok(/fromSidAc && sidQ === fromSidAc && doneSid !== acOpenedSidRef\.current[\s\S]{0,260}?sessions\.open\(doneSid\)/.test(SRC),
+  'G15 lastOk 命中时补 sessions.open(宿主兜底路径原本缺 UI 切换 → 发件人留在旧会话形成循环)')
+ok(SRC.includes("var fromSidAc = String((s.lastOk && s.lastOk.fromSid) || '')") && /sidQ === fromSidAc/.test(SRC),
+  'G15 只切「正看着旧会话」的窗口(fromSid 收窄;lastOk 全局透出,无差别 open 会拉走别的标签页)')
+ok(HSRC.includes('fromSid: oldSid') && HSRC.includes('fromSid: st.lastOk.fromSid'),
+  'G15 宿主 lastOk 带被接续的旧会话 id(fromSid),供前端收窄切换作用域')
+
 // —— G12(②③④):确认卡三分支(同意/拒绝交宿主,超时宿主执行)+ 刷新仪式 + 材料分层 ——
 ok(SRC.includes('autoContAgree') && SRC.includes('autoContReject') && SRC.includes('autoContTimeout'),
   'G12 confirm card has agree / reject / timeout labels')
@@ -172,8 +180,20 @@ ok(HSRC.includes('st.rejectedEdgeAt = armedEdge') && HSRC.includes('now - st.rej
   'G12 rejection recorded host-side (10min window, re-evaluated at next boundary)')
 ok(HSRC.includes('Date.now() < st.armed.expiresAt') && HSRC.includes('await this.hostAutoContinue()'),
   'G12 host timeout auto-continues (unattended fallback)')
-ok(SRC.includes('async function refreshOldSession(') && SRC.includes('async function waitForRefresh(') && SRC.includes('await refreshOldSession(onMsg)'),
-  'G12 ③refresh ritual before material assembly (PLAN+ledger, fail-soft)')
+// ★2026-09-30 守卫演进(用户报障「A区点接续，新会话建到B区」):
+//   刷新仪式调用现在带点击瞬间钉死的 clickedSid —— 旧字面量 'await refreshOldSession(onMsg)'
+//   已不再存在。同时把「身份必须在点击时钉死、仪式等待后不重取」本身钉成守卫:
+//   currentSessionIdClient() 是 mainView 启发式(mainView>0 里 updatedAt 最大者),多窗口下
+//   等待期间任何别的会话一活跃(如另一窗口的慢模型流式输出)updatedAt 就反超,
+//   fromSessionId 漂到别的会话 ⇒ 材料/工作区/模型全部跟错。
+ok(SRC.includes('async function refreshOldSession(') && SRC.includes('async function waitForRefresh(') && SRC.includes('await refreshOldSession(onMsg, clickedSid)'),
+  'G12 ③refresh ritual before material assembly (PLAN+ledger, fail-soft;2026-09-30 起带钉死的 clickedSid)')
+ok(/var clickedSid = String\(currentSessionIdClient\(\) \|\| ''\)/.test(SRC) &&
+   SRC.includes('if (ritual) { try { await refreshOldSession(onMsg, clickedSid) } catch (eRf) {} }') &&
+   SRC.includes("var fromSidForCarry = String(clickedSid || lastRefreshSessionId || '')"),
+  'G16 源会话身份在点击瞬间钉死(clickedSid),仪式等待后不重取(A区点接续、新会话在B区的漂移通道①)')
+ok(bodyOf(SRC, 'async function refreshOldSession(onMsg, pinnedSid) {').includes('var selfSid = String(pinnedSid || currentSessionIdClient() || "")'),
+  'G16 刷新仪式优先用钉死的 pinnedSid 取刷新目标(不现场重取身份)')
 ok(HSRC.includes('refreshRitualPrompt()') && HSRC.includes('autoContinueRefreshRitual === false') && HSRC.includes('refresh: this.config.autoContinueRefreshRitual'),
   'G12 host exposes refresh ritual (config-gated) via handoff-state')
 for (const layer of ['【第0层 · 白板 PLAN.md(节选)】', '【第1层 · 交接账本 ', '【第2层 · 近期线程', '【第3层 · 完整转写与检索(按需)】']) {

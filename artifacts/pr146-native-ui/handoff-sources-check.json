@@ -1,0 +1,17 @@
+{
+  "checks": [
+    "isolated roots",
+    "native workbench mounts",
+    "PLAN and actual material list visible",
+    "1440 board no horizontal overflow",
+    "390 board no horizontal overflow",
+    "only two dedicated external fixtures discovered",
+    "actual isolated file content rendered",
+    "1440 external no horizontal overflow",
+    "390 external no horizontal overflow",
+    "source selection changes actual file detail",
+    "existing import actions preserved",
+    "no runtime errors"
+  ],
+  "errors": []
+}

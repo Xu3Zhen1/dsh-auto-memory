@@ -5,14 +5,7 @@
  * 权威：43 卷环 3（同标题归并）/ 66 卷裁定（复合键含 kind）/ 46+48 卷（v4 看板形态）/ 70 卷 R11。
  */
 import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const {
-  buildSectionCardsPre, dedupeCardsPre, laneOfEntryPre,
-  buildKanbanPre, buildStatCardsPre, buildMemberListPre, buildRailPre, WB_RAIL_ITEMS_PRE_V1,
-} = await import(pathToFileURL(path.join(ROOT, 'lib', 'wb-sidecar.js')).href)
+const { buildSectionCardsPre, dedupeCardsPre, laneOfEntryPre, buildKanbanPre, buildStatCardsPre, buildMemberListPre, buildRailPre, WB_RAIL_ITEMS_PRE_V1 } = await import(new URL('../../lib/wb-sidecar.js', import.meta.url).href)
 
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }

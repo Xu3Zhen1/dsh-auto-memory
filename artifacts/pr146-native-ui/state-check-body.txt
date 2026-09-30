@@ -1,0 +1,21 @@
+ const capture=async(name,el)=>{await el.waitFor();await page.waitForTimeout(250);check(name+' fits',await el.evaluate(n=>n.scrollWidth<=n.clientWidth+1));if(process.env.NATIVE_CAPTURE==='1')await page.screenshot({path:path.join(__dirname,name+'.png')})}
+ let release
+ const pending=new Promise(resolve=>release=resolve)
+ await page.route('**/api/dsh-auto-memory/list',async route=>{await pending;await route.continue()})
+ await root.locator('[data-i5-nav=library]').click();await capture('state-loading',root.locator('.i5-memory-loading'));check('loading announces busy state',await root.locator('.i5-memory-loading').getAttribute('aria-busy')==='true');release();await page.unroute('**/api/dsh-auto-memory/list');await root.locator('.i5-file-list').waitFor()
+ const query=root.getByRole('searchbox',{name:'筛选记忆文件',exact:true});await query.fill('no-matching-native-ui-state-fixture')
+ const empty=root.locator('.i5-empty-state');await empty.waitFor();await empty.locator('img').evaluate(img=>img.decode());check('new empty asset loaded',await empty.locator('img').evaluate(img=>img.naturalWidth===1448))
+ for(const width of [1440,390]){await page.setViewportSize({width,height:900});await capture('state-empty-'+width,empty)}
+ await query.fill('');await page.setViewportSize({width:1440,height:900})
+ let fail=true
+ await page.route('**/api/dsh-auto-memory/file?*',route=>fail?route.fulfill({status:503,json:{error:'隔离验收：读取暂时失败，请重试。'}}):route.continue())
+ await root.locator('.i5-file').nth(1).click();const error=root.locator('.i5-source-card .i5-error');await error.waitFor()
+ for(const width of [1440,390]){await page.setViewportSize({width,height:900});await capture('state-read-error-'+width,error)}
+ fail=false;await error.getByRole('button',{name:'重试',exact:true}).click();await root.locator('.i5-source-card .i5-document').waitFor();check('retry recovers real source content',await error.count()===0);await page.unroute('**/api/dsh-auto-memory/file?*')
+ await page.setViewportSize({width:1440,height:900});await root.getByRole('button',{name:'退出专注查看',exact:true}).click()
+ await page.locator('button[aria-label="设置"]').click();await page.getByRole('button',{name:'通用设置',exact:true}).click();await page.getByRole('button',{name:'深色',exact:true}).click();await page.getByRole('button',{name:'自动记忆 (pre)',exact:true}).click()
+ const host=page.locator('[data-i5-embedded]');await host.getByRole('tab',{name:'记忆',exact:true}).click();await capture('dark-host-memory',host);check('host settings reads actual dark theme',await host.locator('..').getAttribute('data-deep')==='true')
+ await host.getByRole('tab',{name:'外观与目录',exact:true}).click();await host.getByRole('button',{name:/重看引导/}).click();const tour=page.locator('[data-native-tour]');await capture('dark-welcome',tour);await page.keyboard.press('Escape');await tour.waitFor({state:'detached'})
+ await page.getByRole('button',{name:'关闭',exact:true}).click();await page.getByRole('button',{name:'记忆',exact:true}).click();const panel=page.locator('[data-dam-panel]');await panel.waitFor();await capture('dark-panel',panel)
+ await page.setViewportSize({width:390,height:900});await capture('dark-panel-390',panel);await panel.locator('header button').last().click()
+ await page.setViewportSize({width:1440,height:900});await page.locator('button[aria-label="设置"]').click();await page.getByRole('button',{name:'通用设置',exact:true}).click();await page.getByRole('button',{name:'浅色',exact:true}).click();checks.push('isolated host theme restored to light')

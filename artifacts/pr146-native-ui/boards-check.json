@@ -1,0 +1,15 @@
+{
+  "checks": [
+    "isolated roots",
+    "board mode is an explicit string",
+    "real board cards present",
+    "board card opens actual detail drawer",
+    "optional graph renders real source nodes",
+    "canvas detail is reachable",
+    "canvas keyboard toggles selection",
+    "canvas keyboard reopens detail",
+    "canvas stays above host composer",
+    "no runtime errors"
+  ],
+  "errors": []
+}

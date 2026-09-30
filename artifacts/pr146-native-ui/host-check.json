@@ -1,0 +1,221 @@
+{
+  "checks": [
+    "isolated memory roots",
+    "nine native navigation steps",
+    "1440 step 1 fits with reachable footer",
+    "1440 step 2 fits with reachable footer",
+    "1440 step 3 fits with reachable footer",
+    "1440 step 4 fits with reachable footer",
+    "1440 step 5 fits with reachable footer",
+    "1440 step 6 fits with reachable footer",
+    "1440 step 7 fits with reachable footer",
+    "1440 step 8 fits with reachable footer",
+    "1440 step 9 fits with reachable footer",
+    "390 step 1 fits with reachable footer",
+    "390 step 2 fits with reachable footer",
+    "390 step 3 fits with reachable footer",
+    "390 step 4 fits with reachable footer",
+    "390 step 5 fits with reachable footer",
+    "390 step 6 fits with reachable footer",
+    "390 step 7 fits with reachable footer",
+    "390 step 8 fits with reachable footer",
+    "390 step 9 fits with reachable footer",
+    "welcome artwork loaded",
+    "Escape closes welcome",
+    "390 expanded settings savebar remains in viewport",
+    "引擎 content scrolls above savebar",
+    "引擎 sections do not overlap",
+    "记忆 content scrolls above savebar",
+    "记忆 sections do not overlap",
+    "外观与目录 content scrolls above savebar",
+    "外观与目录 sections do not overlap",
+    "行为与维护 content scrolls above savebar",
+    "行为与维护 sections do not overlap",
+    "native panel is mounted",
+    "panel reads actual records or empty state",
+    "panel expands to existing tabs"
+  ],
+  "metrics": [
+    {
+      "viewportWidth": 1440,
+      "step": 1,
+      "width": 1118,
+      "height": 778,
+      "overflow": false,
+      "footer": 839,
+      "viewport": 900,
+      "title": "欢迎使用 dsh-auto-memory"
+    },
+    {
+      "viewportWidth": 1440,
+      "step": 2,
+      "width": 1118,
+      "height": 778,
+      "overflow": false,
+      "footer": 839,
+      "viewport": 900,
+      "title": "记忆是怎么被想起的"
+    },
+    {
+      "viewportWidth": 1440,
+      "step": 3,
+      "width": 1118,
+      "height": 778,
+      "overflow": false,
+      "footer": 839,
+      "viewport": 900,
+      "title": "周期性记忆注入"
+    },
+    {
+      "viewportWidth": 1440,
+      "step": 4,
+      "width": 1118,
+      "height": 778,
+      "overflow": false,
+      "footer": 839,
+      "viewport": 900,
+      "title": "暂离问候与无人值守"
+    },
+    {
+      "viewportWidth": 1440,
+      "step": 5,
+      "width": 1118,
+      "height": 778,
+      "overflow": false,
+      "footer": 839,
+      "viewport": 900,
+      "title": "反思与总结"
+    },
+    {
+      "viewportWidth": 1440,
+      "step": 6,
+      "width": 1118,
+      "height": 778,
+      "overflow": false,
+      "footer": 839,
+      "viewport": 900,
+      "title": "接入别的 AI（扫描结果）"
+    },
+    {
+      "viewportWidth": 1440,
+      "step": 7,
+      "width": 1118,
+      "height": 778,
+      "overflow": false,
+      "footer": 839,
+      "viewport": 900,
+      "title": "三级语义引擎"
+    },
+    {
+      "viewportWidth": 1440,
+      "step": 8,
+      "width": 1118,
+      "height": 778,
+      "overflow": false,
+      "footer": 839,
+      "viewport": 900,
+      "title": "该出手时才出手"
+    },
+    {
+      "viewportWidth": 1440,
+      "step": 9,
+      "width": 1118,
+      "height": 778,
+      "overflow": false,
+      "footer": 839,
+      "viewport": 900,
+      "title": "一切就绪"
+    },
+    {
+      "viewportWidth": 390,
+      "step": 1,
+      "width": 372,
+      "height": 874,
+      "overflow": false,
+      "footer": 887,
+      "viewport": 900,
+      "title": "欢迎使用 dsh-auto-memory"
+    },
+    {
+      "viewportWidth": 390,
+      "step": 2,
+      "width": 372,
+      "height": 874,
+      "overflow": false,
+      "footer": 887,
+      "viewport": 900,
+      "title": "记忆是怎么被想起的"
+    },
+    {
+      "viewportWidth": 390,
+      "step": 3,
+      "width": 372,
+      "height": 874,
+      "overflow": false,
+      "footer": 887,
+      "viewport": 900,
+      "title": "周期性记忆注入"
+    },
+    {
+      "viewportWidth": 390,
+      "step": 4,
+      "width": 372,
+      "height": 874,
+      "overflow": false,
+      "footer": 887,
+      "viewport": 900,
+      "title": "暂离问候与无人值守"
+    },
+    {
+      "viewportWidth": 390,
+      "step": 5,
+      "width": 372,
+      "height": 874,
+      "overflow": false,
+      "footer": 887,
+      "viewport": 900,
+      "title": "反思与总结"
+    },
+    {
+      "viewportWidth": 390,
+      "step": 6,
+      "width": 372,
+      "height": 874,
+      "overflow": false,
+      "footer": 887,
+      "viewport": 900,
+      "title": "接入别的 AI（扫描结果）"
+    },
+    {
+      "viewportWidth": 390,
+      "step": 7,
+      "width": 372,
+      "height": 874,
+      "overflow": false,
+      "footer": 887,
+      "viewport": 900,
+      "title": "三级语义引擎"
+    },
+    {
+      "viewportWidth": 390,
+      "step": 8,
+      "width": 372,
+      "height": 874,
+      "overflow": false,
+      "footer": 887,
+      "viewport": 900,
+      "title": "该出手时才出手"
+    },
+    {
+      "viewportWidth": 390,
+      "step": 9,
+      "width": 372,
+      "height": 874,
+      "overflow": false,
+      "footer": 887,
+      "viewport": 900,
+      "title": "一切就绪"
+    }
+  ],
+  "errors": []
+}

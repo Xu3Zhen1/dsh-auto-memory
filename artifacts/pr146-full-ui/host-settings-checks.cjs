@@ -1,0 +1,30 @@
+const fs=require('fs'),path=require('path'),assert=require('assert/strict')
+const {open}=require('./host-session.cjs')
+;(async()=>{
+ const {browser,page,nav,errors}=await open(),checks=[]
+ const check=(name,value)=>{assert(value,name);checks.push(name)}
+ try{
+  await nav('home');await page.locator('button[aria-label="设置"]').click();await page.getByRole('button',{name:'自动记忆 (pre)',exact:true}).click()
+  const root=page.locator('[data-i5-embedded]');await root.getByRole('tab',{name:'记忆',exact:true}).click()
+  const field=root.locator('input[type=number]:visible').first();await field.waitFor();const original=await field.inputValue()
+  await field.fill(String(Number(original)+1));await page.getByRole('button',{name:'通用设置',exact:true}).click()
+  check('Host navigation cancellation keeps draft',await root.locator('[data-i5-dirty=true]').count()===1)
+  await root.getByRole('button',{name:'取消修改',exact:true}).click();check('Discard restores host field',await field.inputValue()===original)
+  await field.fill(String(Number(original)+1))
+  await page.route('**/api/dsh-auto-memory/config',async r=>r.request().method()==='POST'?r.fulfill({status:500,contentType:'application/json',body:'{"error":"isolated save failure"}'}):r.continue())
+  await root.getByRole('button',{name:/^保存(设置|更改)$/}).click();await page.waitForTimeout(300)
+  check('Host failed save retains draft',await root.locator('[data-i5-dirty=true]').count()===1)
+  await page.unroute('**/api/dsh-auto-memory/config')
+  await root.getByRole('button',{name:/^保存(设置|更改)$/}).click();await page.waitForTimeout(350)
+  check('Host retry saves draft',await root.locator('[data-i5-dirty=false]').count()===1)
+  await field.fill(original);await root.getByRole('button',{name:/^保存(设置|更改)$/}).click();await page.waitForTimeout(350)
+  check('Original isolated setting restored',await root.locator('[data-i5-dirty=false]').count()===1)
+  await root.getByRole('tab',{name:'引擎',exact:true}).focus();await page.keyboard.press('ArrowRight');check('Host tabs support arrow keys',await root.getByRole('tab',{name:'记忆',exact:true}).getAttribute('aria-selected')==='true')
+  await root.getByRole('tab',{name:'外观与目录',exact:true}).click();await root.getByRole('button',{name:/查看更新日志/}).click();await page.waitForTimeout(350);await page.screenshot({path:path.join(__dirname,'after-update-dialog.png')})
+  const status=page.locator('[data-dam-status-dialog]');if(await status.count())await status.locator('button').last().click()
+  await root.getByRole('button',{name:/调试中心/}).click();await page.waitForTimeout(350);await page.screenshot({path:path.join(__dirname,'after-host-diagnostics.png')})
+  check('Host diagnostics renders',await root.getByRole('button',{name:/调试中心/}).count()===1)
+  check('No runtime exceptions',errors.length===0)
+ }catch(e){await page.screenshot({path:path.join(__dirname,'settings-failure.png')});throw e}finally{fs.writeFileSync(path.join(__dirname,'host-settings-results.json'),JSON.stringify({checks,errors},null,2));await browser.close()}
+ console.log('PASS '+checks.length+' independent settings checks')
+})().catch(e=>{console.error(e.message.replace(/token=\S+/g,'token=[redacted]'));process.exitCode=1})

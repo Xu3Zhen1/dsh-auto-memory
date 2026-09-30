@@ -2,13 +2,21 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
-import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const { foldCardsPre } = await import(pathToFileURL(path.join(ROOT, 'lib', 'wb-sidecar.js')).href)
-const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
-const IX = readFileSync(path.join(ROOT, 'lib', 'index.js'), 'utf8')
+const { foldCardsPre } = await import(new URL('../../lib/wb-sidecar.js', import.meta.url).href)
+import { fileURLToPath } from 'node:url'
+
+/** 平台无关行尾守恒：存在 CRLF 时不得有裸 LF；全 LF 合法（CI/Linux 检出态）。
+ *  ★2026-09-28：原断言写作 cnt(NL)===cnt(CRNL)（即"必须全 CRLF"），在 Linux CI 上必红——
+ *  索引里是 LF，本机 core.autocrlf=true 才检出 CRLF。守的语义不变：文件不得混合行尾。 */
+const damNoMixedEol = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length
+  const lf = (s.match(/\n/g) || []).length
+  if (crlf === 0) return true      // 全 LF：合法（CI 检出态）
+  return crlf === lf               // 有 CRLF 则不得再有裸 LF
+}
+const damPath = (rel) => fileURLToPath(new URL('../../' + rel, import.meta.url))
+const SRC = readFileSync(damPath('lib/client.js'), 'utf8')
+const IX = readFileSync(damPath('lib/index.js'), 'utf8')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']')
@@ -42,7 +50,7 @@ eq(cnt(SRC, 'foldDays: foldOpen.days'), 1, 'C1 ★前端取数**真带** foldDay
 eq(cnt(SRC, 'foldOpen.expand = function'), 1, 'C2a（守卫，非功能证据）展开函数定义恰 1 处')
 const _iF = SRC.indexOf("      var stFold = useState({ days: 7 })")
 const _iG = SRC.indexOf('foldOpen.expand = function')
-const _iGend = SRC.indexOf('\r\n', _iG)
+const _iGend = SRC.indexOf('\n', _iG)
 ok(_iF > 0 && _iG > _iF && _iGend > _iG, 'C2b ★折叠态两行可真抽取')
 const _foldSeg = SRC.slice(_iF, _iGend)
 let _lastSet = null
@@ -66,9 +74,9 @@ const h = function (type, props) { const rest = Array.prototype.slice.call(argum
   const push = (k) => { if (k === null || k === undefined || k === false) return; if (Array.isArray(k)) k.forEach(push); else kids.push(k) }
   rest.forEach(push); return { __el: true, type, props: props || {}, kids } }
 const i0 = SRC.indexOf('    var DAM_FOLD_DAYS_DEFAULT = 7')
-const i1 = SRC.indexOf('\n    }\r\n', SRC.indexOf('function DamFoldBar'))
+const i1 = SRC.indexOf('\n    }', SRC.indexOf('function DamFoldBar'))
 ok(i0 > 0 && i1 > i0, 'D0 折叠段可抽取');
-const SEG = SRC.slice(i0, i1 + 7)
+const SEG = SRC.slice(i0, i1 + 6)
 const sb = { console, h, String, Object, Array, JSON, Number }
 sb.globalThis = sb
 vm.runInContext(SEG + ';globalThis.__F = DamFoldBar;', vm.createContext(sb), { filename: 'client.js#fold' })
@@ -91,7 +99,7 @@ eq(pill2.props.onClick, undefined, 'D8 ★负路径：onExpand 非函数 ⇒ onC
 /* ── E. 守恒 ── */
 ok(cnt(SRC, 'setInterval') === 0 || true, 'E1 零新增定时器（人工核对：本轮未加）');
 eq((SRC.match(/(?<!function )MEMORY_TABS\(\)/g) || []).length, 2, 'E2 计数锁不变');
-ok(cnt(SRC, '\n') === cnt(SRC, '\r\n'), 'E3 纯 CRLF');
+ok(damNoMixedEol(SRC), 'E3 纯 CRLF');
 console.log('lib/client.js ' + Buffer.byteLength(SRC, 'utf8') + 'B / CRLF ' + (SRC.match(/\r\n/g) || []).length + ' / sha16 ' + createHash('sha256').update(SRC).digest('hex').slice(0, 16).toUpperCase())
 console.log('PASS ' + p + ' / FAIL ' + f)
 fails.forEach((x) => console.log('  FAIL: ' + x))

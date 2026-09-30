@@ -1,0 +1,102 @@
+[autocont-host] A1 源码守卫
+  ok - armAutoContinue 定义存在
+  ok - pre-step 测量后 arm 自动接续(awaitIdle 标记,避免打断进行中回合;默认不节流)
+  ok - checkWaterLevel 记录「会话真实模型是否已知」
+  ok - 两个 arm 调用点均透传 modelKnown/hard(pre-step 与 turn-stopping 行为必须一致)
+  ok - armAutoContinue 以 shouldArmAutoContinuePre 作前置闸
+  ok - tickAutoContinue 定义存在
+  ok - hostAutoContinue 定义存在
+  ok - autoContinueState 定义存在(带 selfSid 会话归属过滤)
+  ok - decideAutoContinue 定义存在
+  ok - turn-stopping 在 checkWaterLevel 完成后 arm(宿主兜底接线)
+  ok - 心跳定时器调用 tickAutoContinue
+  ok - API 常量定义存在
+  ok - 路由注册存在
+  ok - 经 ctx.get(sessionController) 直调官方会话服务
+[autocont-host] A2-A5 行为
+  ok - 水位不足(0.5)不 arm
+  ok - 达标后 arm
+  ok - 已 armed 不重复建倒计时
+  ok - confirmSeconds=35 生效(到期 ≈ now+35s)
+  ok - autoContinueEnabled=false 不 arm
+  ok - 拒绝窗口(10min)内不 arm
+  ok - 模型未知时不按比例 arm(等硬信号或轮到轮末)
+  ok - 模型未知但有硬信号 → 仍 arm
+  ok - 冷却期内不 arm
+  ok - 未到期 tick 不执行
+  ok - 到期 tick 执行 create+prompt 各一次
+  ok - prompt 携带非空 requestId(0.1.5 必填字段)
+  ok - prompt 目标会话取自 create 结果(session-new-1)
+  ok - prompt mode=queue 且 content 非空
+  ok - 执行完后 armed 清空,不重复执行
+  ok - agree=宿主立即执行
+  ok - ①同意后先终止旧回合(在仪式 prompt 之前),④最后才建新会话
+  ok - cancel 作用于 armed 的旧会话,stopped=ok 落到 result 与 lastOk
+  ok - stale edge 拒绝执行
+  ok - reject 清 armed 且记录拒绝
+  ok - create 传 workspaceId+agentPreset(优先工作区绑定)
+  ok - selectModel 沿用 provider/model/思考档位
+  ok - prompt 注入交接材料
+  ok - 执行成功记录 lastOk
+  ok - 会话创建失败 → ok:false + 错误信息(不崩)
+  ok - sessionController 缺失 → 明确报错(旧 host 兼容)
+  ok - 无 permissionPresets 服务时接续照常成功(fail-soft,不记预设)
+  ok - 继承旧会话权限预设到新会话(current → set,目标为新会话)
+  ok - lastOk 记录继承到的预设
+  ok - 宿主接续产生 2 条 prompt(先仪式后材料)
+  ok - 第 1 条 prompt 是发给旧会话(session-a)的刷新仪式
+  ok - 第 2 条 prompt 才是新会话的交接材料(顺序:先刷新后材料)
+  ok - inspect 缺失(旧 host)→ 退回材料指纹判据,waited 降级为 stamp-fallback 并落进 lastOk
+  ok - autoContinueRefreshRitual=false → 不注入仪式,只发交接材料
+  ok - 同一旧会话 10 分钟内只注入一次仪式(失败重试不刷屏)
+  ok - 无旧会话 id → 不注入(绝不猜会话)
+[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗口(2026-09-14 用户裁定流程)
+  ok - ①同意后先终止旧回合(stopped=ok 落在 result 与 lastOk 两处)
+  ok - ①终止旧回合严格发生在②仪式 prompt 之前(否则仪式只能排在旧回合后面)
+  ok - ③先采样旧会话事件尾(≥2 次:发仪式前基线 + 发仪式后轮询),④才 create 新会话
+  ok - ③事件数增长且基线之上出现 assistant/message → 仪式真结束(waited=updated)
+  ok - ④仪式结束后才把交接材料投给新会话
+  ok - ③事件尾不增长 → 不报 updated(超时继续,不假装仪式已结束)
+  ok - 反向用例确实等满 autoContinueRefreshTimeoutSeconds(证明不是提前返回的假绿)
+  ok - ③仅事件数增长而无 assistant/tool 事件 → 不算仪式结束(判据绑定因果,不是长度)
+  ok - 无 cancel API(旧 host)→ stopped=unavailable,不中止交接
+  ok - cancel 抛错 → stopped=error,交接照常完成(绝不因停回合失败放弃交接 —— 那才会撞上压缩)
+  ok - inspect 抛错 → 退回指纹判据,waited=stamp-fallback(弱点可见)
+  ok - 源码:hostAutoContinue 调 sessionController.cancel({ sessionId })
+  ok - 源码:cancel/inspect 都先探测可用性(旧 host 不至于抛错中断)
+  ok - 源码:仪式完成判据 = 事件尾增长 + 基线之上出现 assistant/message 或 tool/call
+  ok - 源码:事件尾基线在发仪式之前采样
+  ok - 源码:agree 分支记录触发来源(此前只有 reject 有日志)
+  ok - 源码:stopped 透给浏览器轮询视图
+  ok - 宿主接续把 armed 的旧会话 id 传进材料构造(不再靠最近活跃 agent 猜)
+  ok - 带旧会话 id 时宿主接续仍成功
+  ok - 材料包构造/材料组装都接受显式旧会话 id
+  ok - 显式旧会话优先,_lastAgent 仅作回退
+  ok - hostAutoContinue 用 armed.sessionId 构造材料
+  ok - handoff-continue 端点接受 fromSessionId
+  ok - client 一键接续把来源会话 id 传给端点
+[autocont-host] A9 接续会话标题 + 双口径(2026-09-10 实机取证)
+  ok - 宿主接续给新会话设「接续 #N · 工作区」标题(与浏览器路径同名)
+  ok - rename 缺失时 fail-soft(旧 harness 不炸)
+  ok - 标题格式与 client 路径逐字一致
+  ok - 水位记录同时算出 ring 读数,且与触发比例同分母(判定窗)
+  ok - 撞过墙的会话能算出「真实可写上限」(provider 自报硬限 − 预留),供显示距墙剩余
+  ok - arm 时把双口径带进 armed 对象(state 缺失也不得让 arm 失败)
+  ok - autoContinueState 透出双口径给确认卡
+[autocont-host] A10 卡面口径 + 已接续闩锁 + 会话归属(2026-09-10 实机取证)
+  ok - pre-step arm 携带 window/source(否则确认卡显示「xxx / 0 token」)
+  ok - armAutoContinue 对已接续会话直接返回
+  ok - 浏览器路径在建好新会话后落闩(handoff-permission 回调点,而非取材料的预览点)
+  ok - 宿主路径接续成功后落闩
+  ok - 闩锁落盘(重启后依旧生效)
+  ok - 落闩在投料成功之后(prompt 之前失败则不落闩,允许下次重试)
+  ok - 已接续过的会话不再 arm(即使水位达标)
+  ok - 水键归一化:session- 前缀不影响闩锁判定
+  ok - 本窗口的 armed 正常显示
+  ok - 别的窗口不显示这条 armed
+  ok - 取不到会话 id 时 fail-open(卡片照常显示,不因过滤而消失)
+  ok - lastOk 带时间戳(客户端据此给「已完成」提示设有效期)
+  ok - auto-continue-state 端点接受 sessionId 查询参数
+  ok - 出厂默认为关(autoContinueEnabled: false),翻回默认开须用户拍板
+
+[autocont-host] 95/95 assertions passed
