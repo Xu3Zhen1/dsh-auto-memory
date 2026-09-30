@@ -5,7 +5,11 @@
  * 判据（70 卷 L93 逐字）：统计数与真实数据一致（可复算）；空态不崩。
  * 四类口径（48 卷图上 / 源码注释 L1002–L1006）：今日活动=条 / 本周交接=次 / 协作成员=人 / 历史归档=篇。
  */
-import { buildStatCardsPre } from 'file:///D:/dsh-auto-memory/lib/wb-sidecar.js'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const { buildStatCardsPre } = await import(pathToFileURL(path.join(ROOT, 'lib', 'wb-sidecar.js')).href)
 
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }

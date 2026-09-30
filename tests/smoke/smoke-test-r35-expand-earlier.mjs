@@ -5,7 +5,11 @@
  * 判据（70 卷 L94 逐字）：大量卡时首屏不卡；**展开后计数守恒**。
  * 形态来源（44 卷 L83 / 46 卷 L124 逐字）：「展开更早的 21 天（1,341 条活动）」+ 向下箭头，圆角 999px。
  */
-import { foldCardsPre } from 'file:///D:/dsh-auto-memory/lib/wb-sidecar.js'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const { foldCardsPre } = await import(pathToFileURL(path.join(ROOT, 'lib', 'wb-sidecar.js')).href)
 
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }

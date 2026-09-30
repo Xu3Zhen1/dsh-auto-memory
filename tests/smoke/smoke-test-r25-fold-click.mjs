@@ -2,9 +2,13 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
-import { foldCardsPre } from 'file:///D:/dsh-auto-memory/lib/wb-sidecar.js'
-const SRC = readFileSync('D:/dsh-auto-memory/lib/client.js', 'utf8')
-const IX = readFileSync('D:/dsh-auto-memory/lib/index.js', 'utf8')
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const { foldCardsPre } = await import(pathToFileURL(path.join(ROOT, 'lib', 'wb-sidecar.js')).href)
+const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
+const IX = readFileSync(path.join(ROOT, 'lib', 'index.js'), 'utf8')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']')

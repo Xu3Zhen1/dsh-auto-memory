@@ -1,8 +1,12 @@
 /** R31 · 配置层「前端五面消费」逐面真执行（56 卷 §二 客户 5 件事）。 */
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { normalizeLayoutConfig } from 'file:///D:/dsh-auto-memory/lib/layout-config.js'
-const SRC = readFileSync('D:/dsh-auto-memory/lib/client.js', 'utf8')
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const { normalizeLayoutConfig } = await import(pathToFileURL(path.join(ROOT, 'lib', 'layout-config.js')).href)
+const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']')

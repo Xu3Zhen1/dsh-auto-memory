@@ -14,7 +14,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 // 2.2.4:resolveWaterWindow 把 settings.yaml 解析抽成纯函数(block+flow 双支持);测试用 new Function 抽取方法体执行,须显式注入。
-import { parseModelWindowsPre, pickWindowPre, findOfficialContextWindowPre, findSessionModelPre, scanPressureSignalsPre } from '../../lib/water-window.js'
+import { parseModelWindowsPre, pickWindowPre, findOfficialContextWindowPre, findSessionModelPre, scanPressureSignalsPre, armEligiblePre } from '../../lib/water-window.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const SRC = readFileSync(path.resolve(HERE, '..', '..', 'lib', 'index.js'), 'utf8')
@@ -294,7 +294,7 @@ const wlBind = (fake) => {
   const reflectionDigestFn = new Function('truncateHead', grab('reflectionDigest') + '\nreturn reflectionDigest;')(truncateHeadFn)
   fake.resolveWaterWindow = bindMethod("async resolveWaterWindow(providerOverride = '', modelOverride = '') {", fake, Object.assign({ dshHome: () => fakeHome }, waterDeps))
   const sessionEventsOfFn = new Function('return ' + grab('sessionEventsOf') )()
-  return bindMethod('async checkWaterLevel(agent) {', fake, { extractSessionMessages: (a) => a.messages, diag: () => {}, reflectionDigest: reflectionDigestFn, truncateHead: truncateHeadFn, sessionEventsOf: sessionEventsOfFn, findOfficialContextWindowPre, findSessionModelPre, scanPressureSignalsPre })
+  return bindMethod('async checkWaterLevel(agent) {', fake, { extractSessionMessages: (a) => a.messages, diag: () => {}, reflectionDigest: reflectionDigestFn, truncateHead: truncateHeadFn, sessionEventsOf: sessionEventsOfFn, findOfficialContextWindowPre, findSessionModelPre, scanPressureSignalsPre, armEligiblePre })
 }
 // 公式抽查:文本 token = ceil(字符/4)+4(角色框定)
 const fFormula = makeWaterFake({}, [])

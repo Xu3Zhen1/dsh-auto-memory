@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { shouldArmAutoContinuePre } from '../../lib/water-window.js'
+import { shouldArmAutoContinuePre, armEligiblePre } from '../../lib/water-window.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const SRC = readFileSync(path.resolve(HERE, '..', '..', 'lib', 'index.js'), 'utf8')
@@ -129,10 +129,10 @@ function makeEngine(opts) {
     // ReferenceError 被 catch 吞掉,表现为"automContState 拿不到 armed"(实测已发生)。
     // 纪律:此后凡被抽出的函数**新增外部依赖**(模块级绑定/全局),都必须加进这张注入表,
     // 否则同样以"静默不生效"的形式失败。
-    const obj = new Function('diag', 'AbortSignal', 'shouldArmAutoContinuePre',
+    const obj = new Function('diag', 'AbortSignal', 'shouldArmAutoContinuePre', 'armEligiblePre',
       'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD',
       'return {' + extractFn(h) + '};')(
-      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, 0.75, 0.75)
+      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, armEligiblePre, 0.75, 0.75)
     const key = Object.keys(obj)[0]
     fns[key] = obj[key].bind(eng)
   }
@@ -307,9 +307,13 @@ ok(rNoSid && !rNoSid.ok && rNoSid.reason === 'no-old-session', '无旧会话 id 
 // 与「模型真的跑过仪式」没有因果。现改为旧会话事件尾:仪式消息未被处理就不可能产出 assistant/tool 事件。
 console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗口(2026-09-14 用户裁定流程)')
 {
-  // 事件尾替身:发仪式前给基线,之后给增长后的快照(长度增长 + 基线之上出现 assistant/message)。
+  // 事件尾替身:发仪式前给基线,之后给增长后的快照。
+  // ★2026-09-29（报告 §4 改动 C）：判据已从「出现 assistant/message 或 tool/call」收紧为
+  //   「**连续 N 次采样事件数不增长**（回合已静默）**且**基线之上出现过 `tool/call`」。
+  //   ⇒ 夹具必须给出「增长一次后**保持不变**」的快照（mkInspect 的 next 是常量，天然满足静默），
+  //   且增长里必须**含 tool/call**（旧夹具只有 user/assistant，按新判据不足以判定仪式跑过）。
   const tail0 = { meta: { id: 'session-a' }, inheritedEventCount: 0, events: [{ type: 'user/message', seq: 0 }, { type: 'assistant/message', seq: 1 }, { type: 'user/message', seq: 2 }] }
-  const tailOk = { meta: { id: 'session-a' }, inheritedEventCount: 0, events: [...tail0.events, { type: 'user/message', seq: 3 }, { type: 'assistant/message', seq: 4 }] }
+  const tailOk = { meta: { id: 'session-a' }, inheritedEventCount: 0, events: [...tail0.events, { type: 'user/message', seq: 3 }, { type: 'assistant/message', seq: 4 }, { type: 'tool/call', seq: 5 }] }
   const mkInspect = (base, next) => { let first = true; return () => { const e = first ? base : next; first = false; return e } }
 
   const eFlow = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true }, stamp: mkStamp(), inspect: mkInspect(tail0, tailOk) })
@@ -322,7 +326,7 @@ console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗�
   ok(eFlow.calls.inspect.length >= 2 && eFlow.calls.order[2] === 'create',
     '③先采样旧会话事件尾(≥2 次:发仪式前基线 + 发仪式后轮询),④才 create 新会话')
   ok(rFlow.refreshRitual === 'updated' && eFlow.eng._autoContState.lastOk.refreshRitual === 'updated',
-    '③事件数增长且基线之上出现 assistant/message → 仪式真结束(waited=updated)')
+    '③事件数增长后**已静默**且基线之上出现过 tool/call → 仪式真结束(waited=updated)')
   ok(eFlow.calls.prompt[1] && eFlow.calls.prompt[1].sessionId === 'session-new-1' && eFlow.calls.prompt[1].content[0].text === 'carry',
     '④仪式结束后才把交接材料投给新会话')
 
@@ -367,8 +371,15 @@ console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗�
   ok(/await sc\.cancel\(\{ sessionId: oldSid \}\)/.test(SRC), '源码:hostAutoContinue 调 sessionController.cancel({ sessionId })')
   ok(/if \(typeof sc\.cancel !== 'function'\)/.test(SRC) && /typeof sc\.inspect === 'function'/.test(SRC),
     '源码:cancel/inspect 都先探测可用性(旧 host 不至于抛错中断)')
-  ok(/const done = evs\.length > baseCount && evs\.some\(\(ev\) => Number\(ev && ev\.seq\) > baseSeq && \(ev\.type === 'assistant\/message' \|\| ev\.type === 'tool\/call'\)\)/.test(SRC),
-    '源码:仪式完成判据 = 事件尾增长 + 基线之上出现 assistant/message 或 tool/call')
+  // ★2026-09-29（报告 §4 改动 C）：判据已收紧 —— 新增「连续静默采样」项，并保留了
+  //   「基线之上出现过 tool/call」项；旧的「出现 assistant/message 或 tool/call 即完成」
+  //   会让**旧回合自己的产出**满足判据 ⇒ 静默成功。此处守的是新判据的两项都在。
+  ok(/const quietSamplesNeeded = Number\(this\._ritualQuietSamples\) > 0 \? Number\(this\._ritualQuietSamples\) : 2/.test(SRC),
+    '源码:仪式完成判据含「连续 N 次采样不增长」项(N 可配置，默认 2)')
+  ok(/const sawToolCall = evs\.some\(\(ev\) => Number\(ev && ev\.seq\) > baseSeq && ev\.type === 'tool\/call'\)/.test(SRC),
+    '源码:仪式完成判据含「基线之上出现过 tool/call」项')
+  ok(/if \(quiet && sawToolCall\)/.test(SRC) && !/\(ev\.type === 'assistant\/message' \|\| ev\.type === 'tool\/call'\)/.test(SRC),
+    '源码:仪式完成判定 = 两项**与**关系；旧的「assistant/message 或 tool/call 即完成」已移除')
   ok(/const before = await this\.handoffMaterialStamp\(\)[\s\S]{0,900}?const snap0 = await sc\.inspect\(sid, sigInspect\)/.test(SRC),
     '源码:事件尾基线在发仪式之前采样')
   ok(/diag\('auto-continue agreed by user: edge='/.test(SRC), '源码:agree 分支记录触发来源(此前只有 reject 有日志)')
@@ -428,7 +439,7 @@ console.log('[autocont-host] A10 卡面口径 + 已接续闩锁 + 会话归属(2
     'pre-step arm 携带 window/source(否则确认卡显示「xxx / 0 token」)')
   // ②闩锁:同一会话只接续一次。旧实现只有 30 分钟冷却,冷却一过、用户切回旧窗口 → 再次 arm → 再次建会话
   //   (用户报「切回原来的窗口…它还是想接续流程」)。接续失败不落闩(允许重试)。
-  ok(/if \(this\.isContinuedSession\(sid\)\) return/.test(SRC), 'armAutoContinue 对已接续会话直接返回')
+  ok(/if \(this\.isContinuedSession\(sid\)\) \{[\s\S]{0,260}?return\s*\n?\s*\}/.test(SRC), 'armAutoContinue 对已接续会话直接返回（2026-09-29 后为带 diag 的块，语义不变）')
   ok(/engine\.markContinuedSession\(body\.fromSessionId, body\.toSessionId\)/.test(SRC),
     '浏览器路径在建好新会话后落闩(handoff-permission 回调点,而非取材料的预览点)')
   ok(/this\.markContinuedSession\(oldSid, newId\)/.test(SRC), '宿主路径接续成功后落闩')

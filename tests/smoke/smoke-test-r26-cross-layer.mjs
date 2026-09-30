@@ -1,9 +1,13 @@
 /** R26 · 跨层对账审计：includeArchive 缺口收官（真 import + 真调用 + 负路径）。 */
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { foldCardsPre, buildByTagPre } from 'file:///D:/dsh-auto-memory/lib/wb-sidecar.js'
-const SRC = readFileSync('D:/dsh-auto-memory/lib/client.js', 'utf8')
-const IX = readFileSync('D:/dsh-auto-memory/lib/index.js', 'utf8')
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const { foldCardsPre, buildByTagPre } = await import(pathToFileURL(path.join(ROOT, 'lib', 'wb-sidecar.js')).href)
+const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
+const IX = readFileSync(path.join(ROOT, 'lib', 'index.js'), 'utf8')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']')
@@ -48,7 +52,7 @@ eq(SRC.split('apiGet(API.kanbanBoard').length - 1, 4, 'C4b 同源复核')
 ok(!/includeArchive/.test(SRC.slice(SRC.indexOf('function WhiteboardGraphView'), SRC.indexOf('function WhiteboardGraphView') + 3000)), 'C5 ★画布视图不传 includeArchive（口径不被扩散）')
 
 /* ── D. 与 46 卷 §四 B2 的判据对拍 ── */
-const V46 = readFileSync('D:/dsh-auto-memory/docs/teamwork-impl/46-看板排布优化prompt.md', 'utf8')
+const V46 = readFileSync(path.join(ROOT, 'docs', 'teamwork-impl', '46-看板排布优化prompt.md'), 'utf8')
 ok(/includeArchive/.test(V46) && /结构性死泳道|恒空/.test(V46), 'D1 ★权威卷 46 §四 B2 确以 includeArchive 定性该缺陷')
 
 /* ── E. 守恒 ── */
@@ -64,7 +68,16 @@ ok(cnt(SRC, '\n') === cnt(SRC, '\r\n'), 'E2 纯 CRLF')
 // ★2026-09-28 基线演进 R47→R48：修「一键接续漂到别的工作区」——handoffPanelData 的刷新目标不再跨工作区
 //   磁盘回退（原 recentSessionIdFallback 会返回别的工作区的会话，致新会话落到错误 Workspace）。
 //   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
-eq(createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase(), 'BB7C5A19A683604D', 'E3 ★宿主 lib/index.js 基线守恒（sha16 = R48 基线；R47→R48 放行 = 修「一键接续漂到别的工作区」宿主半边：handoffPanelData 不再跨工作区回退刷新目标，理由见上）')
+// ★2026-09-29 基线演进 R48→R49（本轮四处有意变更，均见交接模块优化评估报告）：
+//   ① 修 A（§2.7/§2.8）：「硬触发被 arm 闸拦下」—— `over` 与 arm 闸改为**共用** armEligiblePre，
+//      生效阈值落 rt.waterLevelThreshold 并由两个调用点透传，早退点补 diag（gate=/measured= 同帧）；
+//      连带 lib/water-window.js 新增导出 armEligiblePre。
+//   ② 改动 B（§3）：交接契约指针进 navParts（放在 `if (pack)` 之外，判决走
+//      handoff-anchor.js:contractPointerLinePre 纯函数，含 nav 占比自检）。
+//   ③ 改动 C（§4）：仪式结束判据由「出现 assistant/message 或 tool/call」改为
+//      「连续 N 次采样事件数不增长 **且** 基线之上出现过 tool/call」（消灭一类静默成功）。
+//   语义保留：除本条与 E4 计数外，index.js 任何其他改动仍会被本锁抓住。
+eq(createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase(), 'D0557CC3577E5577', 'E3 ★宿主 lib/index.js 基线守恒（sha16 = R49 基线；R48→R49 放行 = 修 A 硬触发共用闸 + 改动 B 契约指针进 nav + 改动 C 仪式静默判据，理由见上）')
 // ★2026-09-28 计数演进：67→68（新增 skin-library-fetch，见 E3 同批）。语义保留：仍锁路由数不漂移。
 eq(cnt(IX, "path: API[") + cnt(IX, 'path: API.'), 68, 'E4 ★路由数守恒 = 68（2026-09-28 皮肤库路由 +1；其余零新增）')
 console.log('lib/client.js ' + Buffer.byteLength(SRC, 'utf8') + 'B / CRLF ' + (SRC.match(/\r\n/g) || []).length + ' / sha16 ' + createHash('sha256').update(SRC).digest('hex').slice(0, 16).toUpperCase())

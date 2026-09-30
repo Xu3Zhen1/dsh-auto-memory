@@ -23,7 +23,7 @@ import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import {
   parseModelWindowsPre, pickWindowPre, findOfficialContextWindowPre, findSessionModelPre,
-  scanPressureSignalsPre, shouldArmAutoContinuePre, reusableWindowCachePre,
+  scanPressureSignalsPre, shouldArmAutoContinuePre, reusableWindowCachePre, armEligiblePre,
 } from '../../lib/water-window.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -158,7 +158,7 @@ console.log('[switch-decouple] D1b 行为:接续资格只看 autoContinueEnabled
     runtimeFor: () => ({}),
   }
   const arm = bindMethod('armAutoContinue(agent, wl, opts = null) {', eng, {
-    diag: () => {}, shouldArmAutoContinuePre,
+    diag: () => {}, shouldArmAutoContinuePre, armEligiblePre,
   })
   arm({ session: { id: 'session-arm' } }, { ratio: 0.95, tokens: 950, window: 1000, source: 'manual', modelKnown: true, hard: false })
   ok(!!(eng._autoContState && eng._autoContState.armed), 'armAutoContinue 在白板关时代照常落 armed(闸不再被白板开关挡住)')
@@ -214,6 +214,7 @@ const wlBind = (fake) => {
     extractSessionMessages: (a) => a.messages, diag: () => {}, reflectionDigest: reflectionDigestFn,
     truncateHead: truncateHeadFn, sessionEventsOf: sessionEventsOfFn,
     findOfficialContextWindowPre, findSessionModelPre, scanPressureSignalsPre, reusableWindowCachePre,
+    armEligiblePre,
   })
 }
 // 会话事件里带真实模型(request/header)→ 白板关时这个「模型已知」也必须有地方落下去

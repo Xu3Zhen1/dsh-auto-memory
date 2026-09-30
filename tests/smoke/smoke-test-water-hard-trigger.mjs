@@ -90,8 +90,15 @@ ok(/const armRatio = hard \? Math\.max\(ratio, threshold\) : ratio/.test(SRC),
   '硬触发时直接按阈值触发接续(不再依赖比例算得准)')
 ok(/compacted \? 'compaction' : overflowed \? 'overflow' : 'wall'/.test(SRC),
   '硬触发原因三分类:compaction / overflow / wall(水位记录供面板与排障)')
-ok(/const over = armRatio >= threshold/.test(SRC) && !/const over = ratio >= threshold \|\| \(ratio >= 0\.5 && compacted\)/.test(SRC),
-  '触发判定改用 armRatio(旧的「ratio≥0.5 才认 compaction」已废)')
+// ★2026-09-29（报告 §2.8 修法）：`over` 与 arm 闸改为**共用同一函数** armEligiblePre，
+//   不再两处各读一个阈值 —— 旧写法在 threshold<ratio<autoContinueThreshold 区间
+//   「提示更新白板却不接续」。此处断言改守**共用**这件事本身（防将来又被改回各自为政）。
+ok(/const over = armEligiblePre\(armRatio, threshold, hard\)/.test(SRC) &&
+   !/const over = ratio >= threshold \|\| \(ratio >= 0\.5 && compacted\)/.test(SRC),
+  '触发判定改用 armRatio 并经**共用**判据 armEligiblePre（旧的「ratio≥0.5 才认 compaction」已废）')
+ok(/const over = armEligiblePre\(armRatio, threshold, hard\)/.test(SRC) &&
+   /if \(!armEligiblePre\(wl\.ratio, gate, wl\.hard === true\)\)/.test(SRC),
+  '★同源断言：checkWaterLevel 的 over 与 armAutoContinue 的闸共用 armEligiblePre（§2.8 修法不被改回）')
 ok(/rt\.waterLevel = armRatio/.test(SRC), 'arm 用的水位即 armRatio(armAutoContinue 直接吃 rt.waterLevel)')
 ok(/lastOverflowSeen/.test(SRC), '溢出按 seq 去重,不重复触发')
 // PR #29(2026-09-13):Node 22 下全量解压巨型会话文件会崩宿主 —— 切会话推导路径必须保持头帧解码。

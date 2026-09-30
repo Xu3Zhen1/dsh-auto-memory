@@ -1,7 +1,11 @@
 /** R29 · 团队层：08 卷 §四 8 点 + 37 卷两条必做项（真执行 + 负路径）。 */
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-const SRC = readFileSync('D:/dsh-auto-memory/lib/client.js', 'utf8')
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+// ★2026-09-29 修回归门：原先硬编码 'D:/dsh-auto-memory'，fork 与 CI 下必 ENOENT。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
 const L = SRC.split('\r\n')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }

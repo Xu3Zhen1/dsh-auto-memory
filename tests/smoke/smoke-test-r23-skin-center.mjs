@@ -2,8 +2,14 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
-import { SKIN_ASSETS, SKIN_ASSET_KEYS, assetOf } from 'file:///D:/dsh-auto-memory/lib/skin-assets.js'
-import { resolveSkinTheme, composeSkinTheme, buildSkinSlots, skinCenterStatus, SKIN_TOKEN_KEYS, isCssSafe } from 'file:///D:/dsh-auto-memory/lib/skin-center.js'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+// ★2026-09-29 修回归门：静态 import specifier 在**解析期**就失败，不能靠运行时兜底 ⇒ 改动态 import()。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const { SKIN_ASSETS, SKIN_ASSET_KEYS, assetOf } =
+  await import(pathToFileURL(path.join(ROOT, 'lib', 'skin-assets.js')).href)
+const { resolveSkinTheme, composeSkinTheme, buildSkinSlots, skinCenterStatus, SKIN_TOKEN_KEYS, isCssSafe } =
+  await import(pathToFileURL(path.join(ROOT, 'lib', 'skin-center.js')).href)
 
 // ★2026-09-28 多语言化：源码内联文案已改为 L(甲, 乙)。抽段进 vm 的套件需要同名桩。
 // 注入到各 vm 沙箱：L / L3 / normLocale 桩（闭包捕获 self，不依赖 this）
@@ -36,8 +42,8 @@ function __mkI18nStub(self) {
   return self
 }
 
-const SRC = readFileSync('D:/dsh-auto-memory/lib/client.js', 'utf8')
-const IX = readFileSync('D:/dsh-auto-memory/lib/index.js', 'utf8')
+const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
+const IX = readFileSync(path.join(ROOT, 'lib', 'index.js'), 'utf8')
 let p = 0, f = 0; const fails = []
 const ok = (c, m) => { if (c) p++; else { f++; fails.push(m) } }
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']')

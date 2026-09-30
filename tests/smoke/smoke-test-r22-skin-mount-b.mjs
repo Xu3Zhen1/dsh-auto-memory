@@ -2,7 +2,11 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
-const SRC = readFileSync('D:/dsh-auto-memory/lib/client.js', 'utf8');
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+// ★2026-09-29 修回归门：原先硬编码 'D:/dsh-auto-memory'，fork 与 CI（/home/runner/...）下必 ENOENT。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const SRC = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8');
 let pass = 0, fail = 0; const fails = [];
 const ok = (c, m) => { if (c) pass++; else { fail++; fails.push(m) } };
 const eq = (a, b, m) => ok(Object.is(a, b), m + ' [got=' + JSON.stringify(a) + ' want=' + JSON.stringify(b) + ']');
