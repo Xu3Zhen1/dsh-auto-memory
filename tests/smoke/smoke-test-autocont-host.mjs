@@ -16,11 +16,12 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { shouldArmAutoContinuePre, armEligiblePre } from '../../lib/water-window.js'
+import { shouldArmAutoContinuePre } from '../../lib/water-window.js'
 // ★2026-09-30:宿主接续标题新增时间戳,走模块级纯函数 contTitleStampPre —— 抽取重建的 hostAutoContinue
 // 会引用它,必须按注入表纪律一并注入(见 makeEngine 内注释),否则 ReferenceError 被 catch 吞掉,
 // 表现为"接续静默不生效"。
 import { contTitleStampPre } from '../../lib/index.js'
+import { continuationProbePre, continuationRitualEndPre } from '../../lib/continuation.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const SRC = readFileSync(path.resolve(HERE, '..', '..', 'lib', 'index.js'), 'utf8')
@@ -56,7 +57,7 @@ ok(/if \(!shouldArmAutoContinuePre\(wl\)\)/.test(SRC),
 ok(SRC.includes('async tickAutoContinue() {'), 'tickAutoContinue 定义存在')
 ok(SRC.includes('async hostAutoContinue() {'), 'hostAutoContinue 定义存在')
 ok(SRC.includes('autoContinueState(selfSid) {'), 'autoContinueState 定义存在(带 selfSid 会话归属过滤)')
-ok(SRC.includes('async decideAutoContinue(action, edgeAt) {'), 'decideAutoContinue 定义存在')
+ok(SRC.includes('async decideAutoContinue(action, edgeAt, sessionId) {'), 'decideAutoContinue 定义存在')
 ok(/engine\.checkWaterLevel\(agent\)\.then\(function \(\) \{/.test(SRC) && /engine\.armAutoContinue\(agent, \{ ratio: rt2\.waterLevel/.test(SRC),
   'turn-stopping 在 checkWaterLevel 完成后 arm(宿主兜底接线)')
 ok(/void engine\.tickAutoContinue\(\)/.test(SRC), '心跳定时器调用 tickAutoContinue')
@@ -71,7 +72,13 @@ function makeEngine(opts) {
   const sc = {
     // createFailWs(2026-09-28):仅当带 workspaceId 时失败 —— 专测「workspaceId 失效 → 回退 cwd」，
     // 与 createFail(无条件失败)区分开。
-    create: async (r) => { calls.create.push(r); calls.order.push('create'); if (opts && opts.createFail) throw new Error('create failed'); if (opts && opts.createFailScoped && (r.workspaceId || r.cwd)) throw new Error('source workspace unavailable'); if (opts && opts.createFailWs && r && r.workspaceId) throw new Error('bad workspace'); return { sessionId: 'session-new-' + calls.create.length } },
+    create: async (r) => {
+      calls.create.push(r); calls.order.push('create')
+      if (opts && opts.createFail) throw new Error('create failed')
+      if (opts && (opts.createFailScoped || opts.createFailWs) && r.workspaceId) throw Object.assign(new Error('workspace not found'), {code:'workspace/not-found', details:{workspaceId:r.workspaceId}})
+      if (opts && opts.createFailScoped && r.cwd) throw new Error('source workspace unavailable')
+      return { sessionId: 'session-new-' + calls.create.length }
+    },
     selectModel: async (r) => { calls.select.push(r); calls.order.push('selectModel') },
     prompt: async (r) => { calls.prompt.push(r); calls.order.push('prompt:' + String(r && r.sessionId)) },
     rename: async (r) => { calls.rename.push(r) },
@@ -91,9 +98,21 @@ function makeEngine(opts) {
   // inspect 只在用例显式给替身时才挂上:「没有 inspect」正是旧 host 的形态,于是默认夹具
   // 跑的始终是「降级到材料指纹」那条保底路径(与真机旧 host 同形,不是在测一条假路径)。
   if (opts && opts.inspect) {
-    sc.inspect = (sid, sig) => { calls.inspect.push(sid); return opts.inspect(sid, sig) }
+    sc.inspect = (sid, sig) => { calls.inspect.push(sid); return opts.inspect(sid, sig, calls.prompt.find((r) => r.content?.[0]?.text === 'ritual-prompt')?.requestId) }
+  }
+  if (!sc.inspect && !(opts && opts.noInspect)) {
+    sc.inspect = async () => {
+      const request = calls.prompt.find((r) => r.content?.[0]?.text === 'ritual-prompt')
+      return { events: request ? [
+        { seq: 1, type: 'turn/start', data: { turn: 1 } },
+        { seq: 2, type: 'user/message', data: { source: { rpcId: request.requestId } } },
+        { seq: 3, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      ] : [] }
+    }
   }
   const eng = {
+    continuedSessionsFile: () => '/virtual/state',
+    async markContinuedSession(sid) { this._continuedSessions.add(this.waterKey(sid)); return true },
     config: (opts && opts.config) || {},
     _autoContState: undefined,
     hasReliableSessionIdentity(agent) { return !!(agent && agent.session && agent.session.id) },
@@ -111,7 +130,7 @@ function makeEngine(opts) {
     async buildContinueCarry(preferSid) {
       calls.carrySid = String(preferSid || '')
       if (opts && opts.carryFail) return { ok: false, error: 'no material' }
-      return { ok: true, carryText: 'carry', ws: 'D:\\ws', workspaceId: 'ws-1', provider: 'p', model: 'm', reasoningEffort: 'high', agentPreset: 'code', contSeq: 7, wsBase: 'dsh-auto-memory' }
+      return { ok: true, prevSessionId: String(preferSid || ''), carryText: 'carry', ws: 'D:\\ws', workspaceId: 'ws-1', provider: 'p', model: 'm', reasoningEffort: 'high', agentPreset: 'code', contSeq: 7, wsBase: 'dsh-auto-memory' }
     },
     _sc: sc,
     // 2026-09-10:刷新仪式依赖「材料指纹」与仪式文案;真实实现走文件 IO(path/stat/readdir),
@@ -125,7 +144,7 @@ function makeEngine(opts) {
   const fns = {}
   // 2026-09-10:hostAutoContinue 现在会调 this.inheritPermissionPreset / hostRefreshRitual 继承权限与刷材料,
   // 夹具是"从源码抽方法拼假 engine",新增的被调方法必须一并抽取,否则 this 上不存在(TypeError)。
-  for (const h of ['armAutoContinue(agent, wl, opts = null) {', 'async tickAutoContinue() {', 'async hostAutoContinue() {', 'autoContinueState(selfSid) {', 'async decideAutoContinue(action, edgeAt) {', 'async inheritPermissionPreset(oldAgent, newSid, opts = {}) {', 'agentForSessionId(sid) {', 'async inheritPermissionForContinue(fromSessionId, toSessionId, opts = {}) {', 'async hostRefreshRitual(oldSid) {', 'waterKey(sid) {', 'loadContinuedSessions() {', 'isContinuedSession(sid) {']) {
+  for (const h of ['armAutoContinue(agent, wl, opts = null) {', 'async tickAutoContinue() {', 'async hostAutoContinue() {', 'autoContinueState(selfSid) {', 'async decideAutoContinue(action, edgeAt, sessionId) {', 'async inheritPermissionPreset(oldAgent, newSid, opts = {}) {', 'agentForSessionId(sid) {', 'async inheritPermissionForContinue(fromSessionId, toSessionId, opts = {}) {', 'async hostRefreshRitual(oldSid) {', 'waterKey(sid) {', 'loadContinuedSessions() {', 'isContinuedSession(sid) {']) {
     // 2026-09-14:armAutoContinue 起用模块级纯函数 shouldArmAutoContinuePre(会话真实模型未知时
     // 不许按比例 arm)。抽出的函数体在 new Function 里重建,作用域中没有模块级绑定 ⇒
     // 必须与 diag/AbortSignal 一并注入,否则抛 ReferenceError 并被 armAutoContinue 自身的
@@ -135,11 +154,17 @@ function makeEngine(opts) {
     // ReferenceError 被 catch 吞掉,表现为"automContState 拿不到 armed"(实测已发生)。
     // 纪律:此后凡被抽出的函数**新增外部依赖**(模块级绑定/全局),都必须加进这张注入表,
     // 否则同样以"静默不生效"的形式失败。
-    // ★2026-09-29(报告 §2.7 改动 A):armAutoContinue 的闸改用模块级 armEligiblePre ⇒ 同上,必须注入。
-    const obj = new Function('diag', 'AbortSignal', 'shouldArmAutoContinuePre', 'armEligiblePre',
-      'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD', 'contTitleStampPre',
+    const obj = new Function('diag', 'AbortSignal', 'shouldArmAutoContinuePre',
+      // ★2026-10-06 批次 A-1f② 配套（逐 hunk 移植自 PR#217）：armAutoContinue 新增外部依赖
+      //   isSubAgentSession（子代理会话不得 arm）。抽出的方法体在 new Function 里重建，作用域中
+      //   没有模块级绑定 ⇒ 必须一并注入，否则 ReferenceError 被该方法自身的 catch 吞掉，
+      //   表现为「水位达标却不 arm」（同 2026-09-14 shouldArmAutoContinuePre 的教训）。
+      'isSubAgentSession',
+      'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD', 'contTitleStampPre', 'continuationProbePre', 'continuationRitualEndPre',
+      'acquireSharedStateLock', 'continuedSourceFile', 'continuedSourceView', 'continuedSourceState', 'reserveContinuedSource', 'releaseContinuedSource', 'setContinuedSourceTarget', 'CONTINUE_CREATE_FALLBACK_ALLOWED_CODES',
       'return {' + extractFn(h) + '};')(
-      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, armEligiblePre, 0.75, 0.75, contTitleStampPre)
+      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 }, 0.75, 0.75, contTitleStampPre, continuationProbePre, continuationRitualEndPre,
+      async () => () => {}, () => '/virtual/source', () => null, (file, sid) => eng._continuedSessions.has(sid) ? {status:'done'} : null, async () => 'fixture-token', async () => {}, async () => {}, ['workspace/not-found'])
     const key = Object.keys(obj)[0]
     fns[key] = obj[key].bind(eng)
   }
@@ -168,7 +193,7 @@ ok(!e2.eng._autoContState || !e2.eng._autoContState.armed, 'autoContinueEnabled=
 
 const e3 = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true } })
 e3.fns.armAutoContinue(agent, wl)
-await e3.fns.decideAutoContinue('reject', 0)
+await e3.fns.decideAutoContinue('reject', e3.eng._autoContState.armed.edgeAt)
 e3.fns.armAutoContinue(agent, wl)
 ok(!e3.eng._autoContState.armed, '拒绝窗口(10min)内不 arm')
 
@@ -231,7 +256,7 @@ const rStale = await e7.fns.decideAutoContinue('agree', edge7 + 1)
 ok(rStale && !rStale.ok, 'stale edge 拒绝执行')
 const e8 = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true } })
 e8.fns.armAutoContinue(agent, wl)
-await e8.fns.decideAutoContinue('reject', 0)
+await e8.fns.decideAutoContinue('reject', e8.eng._autoContState.armed.edgeAt)
 ok(!e8.eng._autoContState.armed && e8.eng._autoContState.rejectedEdgeAt, 'reject 清 armed 且记录拒绝')
 
 // A5 执行细节
@@ -256,7 +281,7 @@ const rScoped = await eScoped.fns.hostAutoContinue()
 ok(rScoped && !rScoped.ok && /source workspace unavailable/.test(rScoped.error), 'both source-workspace creates fail => explicit failure')
 ok(eScoped.calls.create.length === 2 && eScoped.calls.create.every(r => r.workspaceId || r.cwd), 'no third unscoped create')
 ok(eScoped.calls.prompt.length === 0, 'failed scoped create sends neither carry material nor success notice')
-ok(!eScoped.eng._autoContState.lastOk && !eScoped.eng._continuedSessions.has('session-a'), 'failed create leaves source uncontinued for a later retry')
+ok(!eScoped.eng._autoContState.lastOk && rScoped.continuationPending, 'unknown fallback creation retains pending rather than authorizing a blind retry')
 
 // ★2026-09-28（搭线补完 + 三级回退）：workspaceId 失效（工作区被删/registry 过期）→ create 自动回退
 //   cwd（与浏览器 executeContinue 同款）；接续完成后给**旧会话**投一条搭线通知（mode:queue），
@@ -278,6 +303,7 @@ ok(eN.eng._autoContState.lastOk && eN.eng._autoContState.lastOk.notifiedOld === 
 ok(eN.eng._autoContState.lastOk && eN.eng._autoContState.lastOk.fromSid === 'session-a', 'lastOk.fromSid 记录被接续的旧会话(前端据此收窄 UI 切换作用域)')
 
 const e11 = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true } })
+e11.fns.armAutoContinue(agent, wl)
 e11.eng._ctxRef = { get() { return undefined } }
 const rNoSc = await e11.fns.hostAutoContinue()
 ok(rNoSc && !rNoSc.ok && /sessionController service unavailable/.test(rNoSc.error), 'sessionController 缺失 → 明确报错(旧 host 兼容)')
@@ -324,8 +350,8 @@ ok(eR.calls.prompt[0] && eR.calls.prompt[0].sessionId === 'session-a' && eR.call
   '第 1 条 prompt 是发给旧会话(session-a)的刷新仪式')
 ok(eR.calls.prompt[1] && eR.calls.prompt[1].sessionId === 'session-new-1' && eR.calls.prompt[1].content[0].text === 'carry',
   '第 2 条 prompt 才是新会话的交接材料(顺序:先刷新后材料)')
-ok(rRit && rRit.ok && rRit.refreshRitual === 'stamp-fallback' && eR.eng._autoContState.lastOk.refreshRitual === 'stamp-fallback',
-  'inspect 缺失(旧 host)→ 退回材料指纹判据,waited 降级为 stamp-fallback 并落进 lastOk')
+ok(rRit && rRit.ok && rRit.refreshRitual === 'updated' && eR.eng._autoContState.lastOk.refreshRitual === 'updated',
+  '仪式请求对应回合完成且材料变化后，updated 落进 lastOk')
 
 const eOff = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true, autoContinueRefreshRitual: false }, stamp: mkStamp() })
 eOff.fns.armAutoContinue(agent, wl)
@@ -339,7 +365,7 @@ ok(newSessPrompts.length === 1 && rOff && rOff.refreshRitual === 'disabled',
 const eDup = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true }, stamp: mkStamp() })
 eDup.eng._autoContState = { ritualForSid: 'session-a', ritualAt: Date.now() }
 const rDup = await eDup.fns.hostRefreshRitual('session-a')
-ok(rDup && !rDup.ok && rDup.reason === 'already-sent', '同一旧会话 10 分钟内只注入一次仪式(失败重试不刷屏)')
+ok(rDup && rDup.ok && rDup.waited === 'updated', '失败重试仍核验本次仪式结束，不以旧发送标记跳过')
 const rNoSid = await eDup.fns.hostRefreshRitual('')
 ok(rNoSid && !rNoSid.ok && rNoSid.reason === 'no-old-session', '无旧会话 id → 不注入(绝不猜会话)')
 
@@ -349,14 +375,15 @@ ok(rNoSid && !rNoSid.ok && rNoSid.reason === 'no-old-session', '无旧会话 id 
 // 与「模型真的跑过仪式」没有因果。现改为旧会话事件尾:仪式消息未被处理就不可能产出 assistant/tool 事件。
 console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗口(2026-09-14 用户裁定流程)')
 {
-  // 事件尾替身:发仪式前给基线,之后给增长后的快照。
-  // ★2026-09-29（报告 §4 改动 C）：判据已从「出现 assistant/message 或 tool/call」收紧为
-  //   「**连续 N 次采样事件数不增长**（回合已静默）**且**基线之上出现过 tool/call」。
-  //   ⇒ 夹具必须给出「增长一次后**保持不变**」的快照（mkInspect 的 next 是常量，天然满足静默），
-  //   且增长里必须**含 tool/call**（旧夹具只有 user/assistant，按新判据不足以判定仪式跑过）。
+  // 事件尾替身:发仪式前给基线,之后给增长后的快照(长度增长 + 基线之上出现 assistant/message)。
   const tail0 = { meta: { id: 'session-a' }, inheritedEventCount: 0, events: [{ type: 'user/message', seq: 0 }, { type: 'assistant/message', seq: 1 }, { type: 'user/message', seq: 2 }] }
-  const tailOk = { meta: { id: 'session-a' }, inheritedEventCount: 0, events: [...tail0.events, { type: 'user/message', seq: 3 }, { type: 'assistant/message', seq: 4 }, { type: 'tool/call', seq: 5 }] }
-  const mkInspect = (base, next) => { let first = true; return () => { const e = first ? base : next; first = false; return e } }
+  const tailOk = { meta: { id: 'session-a' }, inheritedEventCount: 0, events: [...tail0.events,
+    { type: 'turn/start', seq: 3, data: { turn: 2 } },
+    { type: 'user/message', seq: 4, data: { source: { rpcId: 'ritual-request' } } },
+    { type: 'assistant/message', seq: 5 },
+    { type: 'turn/end', seq: 6, data: { turn: 2, reason: { kind: 'completed' } } },
+  ] }
+  const mkInspect = (base, next) => { let first = true; return (sid, signal, requestId) => { const e = first ? base : next; first = false; return JSON.parse(JSON.stringify(e).replaceAll('ritual-request', requestId || 'not-sent')) } }
 
   const eFlow = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true }, stamp: mkStamp(), inspect: mkInspect(tail0, tailOk) })
   eFlow.fns.armAutoContinue(agent, wl)
@@ -368,7 +395,7 @@ console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗�
   ok(eFlow.calls.inspect.length >= 2 && eFlow.calls.order[2] === 'create',
     '③先采样旧会话事件尾(≥2 次:发仪式前基线 + 发仪式后轮询),④才 create 新会话')
   ok(rFlow.refreshRitual === 'updated' && eFlow.eng._autoContState.lastOk.refreshRitual === 'updated',
-    '③事件数增长后**已静默**且基线之上出现过 tool/call → 仪式真结束(waited=updated)')
+    '③本次仪式请求所在 turn/end 完成后才返回 updated')
   ok(eFlow.calls.prompt[1] && eFlow.calls.prompt[1].sessionId === 'session-new-1' && eFlow.calls.prompt[1].content[0].text === 'carry',
     '④仪式结束后才把交接材料投给新会话')
 
@@ -378,8 +405,8 @@ console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗�
   eNo.fns.armAutoContinue(agent, wl)
   const tNo = Date.now()
   const rNo = await eNo.fns.hostAutoContinue()
-  ok(rNo && rNo.ok && rNo.refreshRitual === 'timeout',
-    '③事件尾不增长 → 不报 updated(超时继续,不假装仪式已结束)')
+  ok(rNo && !rNo.ok && rNo.error.includes('timeout') && eNo.calls.create.length === 0,
+    '③事件尾不增长：超时拒绝创建后继')
   ok(Date.now() - tNo >= 15000, '反向用例确实等满 autoContinueRefreshTimeoutSeconds(证明不是提前返回的假绿)')
 
   // ③ 反向二:长度增长了但只有 user/message(模型没产出任何 assistant/tool 事件)→ 同样不算仪式结束。
@@ -388,7 +415,7 @@ console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗�
   const eU = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true, autoContinueRefreshTimeoutSeconds: 15 }, stamp: mkStamp(), inspect: mkInspect(tail0, tailUser) })
   eU.fns.armAutoContinue(agent, wl)
   const rU = await eU.fns.hostAutoContinue()
-  ok(rU && rU.refreshRitual === 'timeout', '③仅事件数增长而无 assistant/tool 事件 → 不算仪式结束(判据绑定因果,不是长度)')
+  ok(rU && !rU.ok && rU.error.includes('timeout') && eU.calls.create.length === 0, '③仅事件数增长而无 assistant/tool 事件 → 不算仪式结束(判据绑定因果,不是长度)')
 
   // ①② 降级:旧 host 没有 cancel(或 cancel 抛错)→ 交接照常完成,弱点记录在案(report 不许静默近似)。
   const eNC = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true }, noCancel: true })
@@ -407,23 +434,16 @@ console.log('[autocont-host] A11 终止旧回合 → 仪式真结束 → 新窗�
   const eIF = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true }, stamp: mkStamp(), inspect: () => { throw new Error('inspect boom') } })
   eIF.fns.armAutoContinue(agent, wl)
   const rIF = await eIF.fns.hostAutoContinue()
-  ok(rIF && rIF.ok && rIF.refreshRitual === 'stamp-fallback', 'inspect 抛错 → 退回指纹判据,waited=stamp-fallback(弱点可见)')
+  ok(rIF && !rIF.ok && rIF.error.includes('inspect boom') && eIF.calls.create.length === 0, 'inspect 抛错不能证明完成：拒绝创建新会话')
 
   // A1 源码守卫(新增调用点)
   ok(/await sc\.cancel\(\{ sessionId: oldSid \}\)/.test(SRC), '源码:hostAutoContinue 调 sessionController.cancel({ sessionId })')
-  ok(/if \(typeof sc\.cancel !== 'function'\)/.test(SRC) && /typeof sc\.inspect === 'function'/.test(SRC),
+  ok(/if \(typeof sc\.cancel !== 'function'\)/.test(SRC) && /typeof sc\.inspect !== 'function'/.test(SRC),
     '源码:cancel/inspect 都先探测可用性(旧 host 不至于抛错中断)')
-  // ★2026-09-29（报告 §4 改动 C）：判据已收紧 —— 新增「连续静默采样」项，并保留了
-  //   「基线之上出现过 tool/call」项；旧的「出现 assistant/message 或 tool/call 即完成」
-  //   会让**旧回合自己的产出**满足判据 ⇒ 静默成功。此处守的是新判据的两项都在。
-  ok(/const quietSamplesNeeded = Number\(this\._ritualQuietSamples\) > 0 \? Number\(this\._ritualQuietSamples\) : 2/.test(SRC),
-    '源码:仪式完成判据含「连续 N 次采样不增长」项(N 可配置，默认 2)')
-  ok(/const sawToolCall = evs\.some\(\(ev\) => Number\(ev && ev\.seq\) > baseSeq && ev\.type === 'tool\/call'\)/.test(SRC),
-    '源码:仪式完成判据含「基线之上出现过 tool/call」项')
-  ok(/if \(quiet && sawToolCall\)/.test(SRC) && !/\(ev\.type === 'assistant\/message' \|\| ev\.type === 'tool\/call'\)/.test(SRC),
-    '源码:仪式完成判定 = 两项**与**关系；旧的「assistant/message 或 tool/call 即完成」已移除')
-  ok(/const before = await this\.handoffMaterialStamp\(\)[\s\S]{0,900}?const snap0 = await sc\.inspect\(sid, sigInspect\)/.test(SRC),
-    '源码:事件尾基线在发仪式之前采样')
+  ok(SRC.includes('continuationRitualEndPre(snap && snap.events, reqId, baseSeq)'),
+    '仪式结束绑定 requestId 与 turn/end，不接受首个工具调用')
+  ok(SRC.includes('sc.inspect(sid, signal)') && SRC.includes('const initial = await probe'),
+    '基线与所有轮询检查均受 probe 截止时间保护')
   ok(/diag\('auto-continue agreed by user: edge='/.test(SRC), '源码:agree 分支记录触发来源(此前只有 reject 有日志)')
   ok(/stopped: st\.lastOk\.stopped \|\| ''/.test(SRC), '源码:stopped 透给浏览器轮询视图')
 }
@@ -441,10 +461,10 @@ ok(SRC.includes('async buildPrevSessionPack(preferSid) {') && SRC.includes('asyn
   '材料包构造/材料组装都接受显式旧会话 id')
 ok(/if \(want\) cands\.push\(want\)[\s\S]{0,160}?if \(lastSid && lastSid !== want\) cands\.push\(lastSid\)/.test(SRC),
   '显式旧会话优先,_lastAgent 仅作回退')
-ok(/const d = await this\.buildContinueCarry\(oldSid\)/.test(SRC), 'hostAutoContinue 用 armed.sessionId 构造材料')
+ok(SRC.includes('this.buildContinueCarry(oldSid)'), 'hostAutoContinue 用 armed.sessionId 构造材料')
 ok(/engine\.buildContinueCarry\(\(body && body\.fromSessionId\) \|\| ''\)/.test(SRC), 'handoff-continue 端点接受 fromSessionId')
-ok(/apiPost\(API\.handoffContinue, fromSidForCarry \? \{ fromSessionId: fromSidForCarry \} : \{\}\)/.test(CLIENT),
-  'client 一键接续把来源会话 id 传给端点')
+ok(/apiPost\(API\.autoContDecide, \{ action: 'manual', sessionId: sourceId \}\)/.test(CLIENT),
+  'client 显式源身份进入与自动路径相同的宿主事务')
 
 console.log('[autocont-host] A9 接续会话标题 + 双口径(2026-09-10 实机取证)')
 {
@@ -482,13 +502,13 @@ console.log('[autocont-host] A10 卡面口径 + 已接续闩锁 + 会话归属(2
     'pre-step arm 携带 window/source(否则确认卡显示「xxx / 0 token」)')
   // ②闩锁:同一会话只接续一次。旧实现只有 30 分钟冷却,冷却一过、用户切回旧窗口 → 再次 arm → 再次建会话
   //   (用户报「切回原来的窗口…它还是想接续流程」)。接续失败不落闩(允许重试)。
-  ok(/if \(this\.isContinuedSession\(sid\)\) \{[\s\S]{0,260}?return\s*\n?\s*\}/.test(SRC), 'armAutoContinue 对已接续会话直接返回（2026-09-29 后为带 diag 的块，语义不变）')
-  ok(/engine\.markContinuedSession\(body\.fromSessionId, body\.toSessionId\)/.test(SRC),
-    '浏览器路径在建好新会话后落闩(handoff-permission 回调点,而非取材料的预览点)')
-  ok(/this\.markContinuedSession\(oldSid, newId\)/.test(SRC), '宿主路径接续成功后落闩')
+  ok(/if \(this\.isContinuedSession\(sid\)\) return/.test(SRC), 'armAutoContinue 对已接续会话直接返回')
+  ok(!/engine\.markContinuedSession\(body\.fromSessionId, body\.toSessionId\)/.test(SRC),
+    '权限回调不能代替材料接受，不再落闩')
+  ok(/await this\.markContinuedSession\(oldSid, newId, reservation\)/.test(SRC), '宿主路径接续成功后落闩')
   ok(/path\.join\(dshHome\(\), 'memory', 'auto-continue-done\.json'\)/.test(SRC), '闩锁落盘(重启后依旧生效)')
   const fnHost = extractFn('async hostAutoContinue() {')
-  ok(fnHost.indexOf('this.markContinuedSession(oldSid, newId)') > fnHost.indexOf('await sc.prompt('),
+  ok(fnHost.indexOf('await this.markContinuedSession(oldSid, newId, reservation)') > fnHost.indexOf('await sc.prompt('),
     '落闩在投料成功之后(prompt 之前失败则不落闩,允许下次重试)')
 
   const eLatch = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true, autoContinueThreshold: 0.75 }, continued: new Set(['a']) })

@@ -150,10 +150,14 @@ ok(!/recallL0CachedRank|l0RecallFromIndex/.test(SRC_JS.replace(/[^\n]*读侧捷�
 
 // ── H. 设置页 ──
 const occ = (h, n) => { let c = 0, i = 0; for (;;) { const p = h.indexOf(n, i); if (p < 0) return c; c++; i = p + n.length } }
-ok(occ(SRC_CLI, "t('fIncEmbed')") === 2, 'H1 两个设置页各有一个增量嵌入控件', occ(SRC_CLI, "t('fIncEmbed')"))
+// ★2026-09-30 双皮肤块：现场有**三份**设置页文本——
+//   ① 旧款块 Iter5Settings（真渲染）；② 新块 Iter5Settings（真渲染）；
+//   ③ SettingsPage 模板源码（生成器的源，**不渲染**）。
+//   守卫语义不变：每个可见设置面板都必须有该控件。
+ok(occ(SRC_CLI, "t('fIncEmbed')") === 3, 'H1 三份设置页文本各有一个增量嵌入控件', occ(SRC_CLI, "t('fIncEmbed')"))
 // ★2026-09-30：改数**绑定模式**而非裸键名 —— CHANGELOG 字典文案也会提到该键名（4→6 误红）；
   //   绑定模式 `set('semanticEmbedIncremental', ...)` 恒为 2（每面板一处）。
-  ok(occ(SRC_CLI, "set('semanticEmbedIncremental', e.target.checked)") === 2, 'H2 控件绑定该配置键（2 页 × 1 控件）', occ(SRC_CLI, "set('semanticEmbedIncremental', e.target.checked)"))
+  ok(occ(SRC_CLI, "set('semanticEmbedIncremental', e.target.checked)") === 3, 'H2 控件绑定该配置键（3 份文本 × 1 控件）', occ(SRC_CLI, "set('semanticEmbedIncremental', e.target.checked)"))
 ok(SRC_CLI.includes("fIncEmbed: '增量嵌入"), 'H3 zh 词典齐备')
 ok(SRC_CLI.includes("fIncEmbed: 'Incremental embedding"), 'H4 en 词典齐备')
 ok(SRC_CLI.includes('"fIncEmbed"'), 'H5 ja 词典齐备')

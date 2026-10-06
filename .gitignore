@@ -31,4 +31,10 @@ artifacts/release-c2-asset-pack/*.tgz
 
 # 含个人记忆的隔离扫描截图,禁止提交/上传(handoff 规定)
 artifacts/pr146-native-ui/operations-外部来源.png
-artifacts/pr146-native-ui/host.pid
+artifacts/pr146-native-ui/host.pid
+
+# --- 2026-10-01 补漏（issue #166）：源码副本/调试残留 ---
+# 3.2.6 曾把 7 份 client.js 调试残留发上 npm（约 14.97 MB）：它们不含 bak，
+# 躲过了 *.bak* 系列规则。故改为**结构性**规则：任何「主名之后还有第二个点」的
+# lib/ 文件都是副本/备份（如 client.js.scratch、index.js.GOOD-1533），一律不入库。
+lib/*.*.*

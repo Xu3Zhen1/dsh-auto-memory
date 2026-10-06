@@ -139,5 +139,24 @@ t('#148 反例：方括号但非 kind 标记不受影响', () => {
   assert.ok(r.l0.includes('[附录A]'), r.l0)
 })
 
+t('#151 短条目（< minChars）走 growToMin 重建时同样剥 [kind:*]', () => {
+  // 四标记 × 短长度：首句 < 15 字 ⇒ 走 growToMin 从原文重建 parts 的路径（#148 修复残留）。
+  for (const kind of ['fact', 'rule', 'preference', 'todo']) {
+    const r = extractL0Pre('- 12:00 [kind:' + kind + '] 无')
+    assert.ok(!r.l0.includes('kind:'), kind + ' -> ' + r.l0)
+    assert.equal(r.l0, '无')
+  }
+})
+t('#151 多行短条目：growToMin 逐 part 剥（不只首 part）', () => {
+  const r = extractL0Pre('- 12:00 [kind:todo] 无\n- 12:01 [kind:fact] 第二条内容也短\n')
+  assert.ok(!r.l0.includes('kind:'), r.l0)
+  assert.equal(r.l0, '无。第二条内容也短')
+})
+t('#151 长条目路径不受影响（回归 #148 主路径）', () => {
+  const r = extractL0Pre('- 12:11 [kind:fact] 全插件版本核查并升级：仅 auto-memory 落后')
+  assert.equal(r.l0, '全插件版本核查并升级：仅 auto-memory 落后')
+})
+
+// ---------- 汇总 ----------
 console.log(`[l0-extract-pre] pass=${pass} fail=${fail}`)
 if (fail) process.exit(1)

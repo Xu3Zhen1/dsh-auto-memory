@@ -186,12 +186,17 @@ ok(HSRC.includes('Date.now() < st.armed.expiresAt') && HSRC.includes('await this
 //   currentSessionIdClient() 是 mainView 启发式(mainView>0 里 updatedAt 最大者),多窗口下
 //   等待期间任何别的会话一活跃(如另一窗口的慢模型流式输出)updatedAt 就反超,
 //   fromSessionId 漂到别的会话 ⇒ 材料/工作区/模型全部跟错。
-ok(SRC.includes('async function refreshOldSession(') && SRC.includes('async function waitForRefresh(') && SRC.includes('await refreshOldSession(onMsg, clickedSid)'),
-  'G12 ③refresh ritual before material assembly (PLAN+ledger, fail-soft;2026-09-30 起带钉死的 clickedSid)')
-ok(/var clickedSid = String\(currentSessionIdClient\(\) \|\| ''\)/.test(SRC) &&
-   SRC.includes('if (ritual) { try { await refreshOldSession(onMsg, clickedSid) } catch (eRf) {} }') &&
-   SRC.includes("var fromSidForCarry = String(clickedSid || lastRefreshSessionId || '')"),
-  'G16 源会话身份在点击瞬间钉死(clickedSid),仪式等待后不重取(A区点接续、新会话在B区的漂移通道①)')
+  // ★2026-10-01 判据迁移（移植上游 PR#157）：一键接续改为**纯转发宿主**（浏览器只递交决定），
+  //   仪式与材料组装移到宿主 hostAutoContinue。漂移防护**未丢失**，只是换了位置：
+  //   前端钉死 sourceId → decideAutoContinue(manual, sid) → 宿主用 armed.sessionId 构造材料。
+  ok(HSRC.includes('hostRefreshRitual') && HSRC.includes('autoContinueRefreshRitual === false') && HSRC.includes('refreshRitualPrompt()'),
+    'G12 ③refresh ritual before material assembly (宿主侧 hostRefreshRitual，config 把关)')
+  ok(/var sourceId = String\(currentSessionIdClient\(\) \|\| ''\)/.test(SRC) &&
+     SRC.includes("apiPost(API.autoContDecide, { action: 'manual', sessionId: sourceId })") &&
+     HSRC.includes('async decideAutoContinue(action, edgeAt, sessionId) {') &&
+     HSRC.includes("if (st.armed && st.armed.sessionId !== sid) return { ok: false, error: 'another session has a pending continuation' }") &&
+     HSRC.includes('await this.buildContinueCarry(oldSid)'),
+    'G16 源会话身份在点击瞬间钉死(sourceId),仪式等待后不重取(A区点接续、新会话在B区的漂移通道①)')
 ok(bodyOf(SRC, 'async function refreshOldSession(onMsg, pinnedSid) {').includes('var selfSid = String(pinnedSid || currentSessionIdClient() || "")'),
   'G16 刷新仪式优先用钉死的 pinnedSid 取刷新目标(不现场重取身份)')
 ok(HSRC.includes('refreshRitualPrompt()') && HSRC.includes('autoContinueRefreshRitual === false') && HSRC.includes('refresh: this.config.autoContinueRefreshRitual'),

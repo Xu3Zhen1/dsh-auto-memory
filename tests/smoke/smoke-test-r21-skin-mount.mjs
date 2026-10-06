@@ -50,7 +50,8 @@ eq((SRC.match(/(?<!function )MEMORY_TABS\(\)/g) || []).length, 2, 'A8 ★计数�
 ok(cnt(SRC, 'data-dam-region') >= 18, 'A9 结构锚不降');
 ok(damNoMixedEol(SRC), 'A10 纯 CRLF');
 // 三处挂载点 + 原文案
-const legacySource = SRC.replace(/    \/\/ ITER5-GENERATED:BEGIN[\s\S]*?    \/\/ ITER5-GENERATED:END/, '');
+// ★2026-09-30 双皮肤块：生成区现有两块（legacy + 三套变体），故「经典源」必须两块都剥。
+const legacySource = SRC.replace(/    \/\/ ===== ITER5-LEGACY-GENERATED:BEGIN =====[\s\S]*?    \/\/ ===== ITER5-LEGACY-GENERATED:END =====/, '').replace(/    \/\/ ITER5-GENERATED:BEGIN[\s\S]*?    \/\/ ITER5-GENERATED:END/, '');
 eq(cnt(legacySource, 'h(SkinEmpty,'), 3, 'A11 三处经典挂载仍保留（refine / hub-skills / stats）');
 eq(cnt(SRC, 'h(SkinEmpty,') - cnt(legacySource, 'h(SkinEmpty,'), 1, 'A11b 原生统计复用相同空态槽位');
 ok(['refineEmpty', 'hubSkillsEmpty', 'statsEmpty'].every((k) => cnt(SRC, "t('" + k + "')") >= 1), 'A12 ★原文案全保留（图是追加，不是替换）');

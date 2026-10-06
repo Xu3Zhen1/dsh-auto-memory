@@ -63,8 +63,8 @@ const MEND = '    // ===================== S2-skin:end ====================='
 
 /* ── A. 结构（段与外） ── */
 eq(cnt(SRC, MEND), 1, 'A1 ★端段标记仍恰 1 处')
-ok(cnt(SRC, 'function SkinCenterPanel') === 1 && cnt(SRC, 'h(SkinCenterPanel,') === 1, 'A2 ★面板 1 定义 + 1 调用')
-ok(cnt(SRC, 'function SkinSlotRows') === 1 && cnt(SRC, 'h(SkinSlotRows,') === 1, 'A3 ★槽位回显 1 定义 + 1 调用')
+ok(cnt(SRC, 'function SkinCenterPanel') === 1 && cnt(SRC, 'h(SkinCenterPanel,') >= 1, 'A2 ★面板 1 定义 + ≥1 调用（双皮肤块各挂一处）')
+ok(cnt(SRC, 'function SkinSlotRows') === 1 && cnt(SRC, 'h(SkinSlotRows,') >= 1, 'A3 ★槽位回显 1 定义 + ≥1 调用（同上）')
 eq(cnt(SRC, 'function useTick'), 1, 'A4 ★复用既有 useTick（未造新钩子）')
 eq((SRC.match(/(?<!function )MEMORY_TABS\(\)/g) || []).length, 2, 'A5 计数锁不变')
 ok(!/set(Interval|Timeout)\s*\(/.test(SRC.slice(SRC.indexOf('function fetchSkinCenter'), SRC.indexOf('function SkinSlotRows'))), 'A6 ★皮肤段零新增定时器')
@@ -127,14 +127,19 @@ eq(SKIN_TOKEN_KEYS.length, 42, 'D9 公开 token 清单 = 42（12 卷 §四）')
 ok(cnt(SRC, 'data-dam-region') === cnt(SRC, 'data-dam-region') && !/data-dam-block/.test(SEG.slice(SEG.indexOf('function SkinCenterPanel'))), 'E1 ★皮肤新段不引入 block 锚')
 ok(damNoMixedEol(SRC), 'E2 纯 CRLF')
 
-/* ── F. 皮肤选择中心的「开发版」署名（★2026-09-28：换装社区作者 iter5 实现，PR #146） ──
- *   判据三件：①开发版条目带 credit 字段 ②悬停 title 含负责人 ③卡片内显式署名锚点存在。
- *   口径：按所有者 2026-09-28 裁定，用户可见名统一为「新款」（不再用旧内部代号「开发版」）。 */
-ok(/id: 'v4'[^}]*credit: 'Minervaowl7'/.test(SRC), 'F1 ★开发版条目带 credit（皮肤负责人署名）')
+/* ── F. 皮肤选择中心的社区作者署名（★2026-09-28 引入；★2026-09-30 F 批改口径） ──
+ *   ★F 批口径变更（用户裁定「皮肤必须可选择而非替换」）：旧「新款（新版 UI）」总卡**退场**，
+ *   其语义由皮肤族四款直选覆盖（基线 / 仪器 / 编辑 / 活水）。故：
+ *   ①署名主体从 v4 总卡**移到三套社区皮肤卡**（instrument / editorial / water）；
+ *   ②「新款」这个名字不再作为卡片标签存在（按钮口径改「经典 <-> 新皮肤族」）。
+ *   判据仍是三件：①社区皮肤卡带 credit ②悬停 title 含负责人 ③卡片内显式署名锚点存在。 */
+ok(/family: 'instrument'[^}]*credit: 'Minervaowl7'/.test(SRC), 'F1 ★社区皮肤卡带 credit（皮肤负责人署名）')
 ok(/title: it\.credit[\s\S]{0,220}?皮肤负责人：/.test(SRC), 'F2 ★悬停提示含「皮肤负责人」（鼠标挪上去可见）')
 ok(/data-dam-skin-credit'/.test(SRC), 'F3 ★卡片内显式署名锚点存在（触屏/键盘用户也能看到）')
-ok(!SRC.includes("L('开发版'") && !SRC.includes('开发版（新版 UI）'), 'F4 ★按钮/标签不再用「开发版」旧名（所有者裁定统一称「新款」）')
-ok(/L\('新款', 'New UI'\)/.test(SRC) && SRC.includes('新款（新版 UI）'), 'F5 按钮与卡片均用「新款」')
+ok(!SRC.includes("L('开发版'") && !SRC.includes('开发版（新版 UI）'), 'F4 ★不再用「开发版」旧名')
+// ★F 批：旧「新款（新版 UI）」总卡已退场（语义被四款族卡覆盖）⇒ 断言改为「已退场 + 四款族卡齐备」。
+ok(!SRC.includes('新款（新版 UI）'), 'F5 ★旧「新款」总卡已退场（用户裁定：改可选择式，不保留并列旧入口）')
+ok(/family: 'legacy'/.test(SRC) && /family: 'instrument'/.test(SRC) && /family: 'editorial'/.test(SRC) && /family: 'water'/.test(SRC), 'F5b ★皮肤族四款直选齐备（经典由原启动项承担）')
 console.log('lib/client.js ' + Buffer.byteLength(SRC, 'utf8') + 'B / CRLF ' + (SRC.match(/\r\n/g) || []).length + ' / sha16 ' + createHash('sha256').update(SRC).digest('hex').slice(0, 16).toUpperCase())
 console.log('lib/index.js ' + Buffer.byteLength(IX, 'utf8') + 'B / sha16 ' + createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase())
 console.log('PASS ' + p + ' / FAIL ' + f)

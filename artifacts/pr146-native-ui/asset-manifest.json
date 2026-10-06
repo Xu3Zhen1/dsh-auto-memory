@@ -1,9 +1,0 @@
-{
-  "asset": "lib/assets/skin/slots/hero.native-folio-v1.png",
-  "source": "OpenAI built-in image_gen",
-  "prompt": "Create a production UI illustration asset based on the central artwork of the reference screenshot, not a screenshot. Isolate and faithfully recreate only the open cobalt-blue memory folio/book, flowing translucent pale-blue paper ribbons and a few floating small cards showing a simple mountain picture, note lines, a profile silhouette, a check mark, and one tiny warm amber connection. Refined soft paper-like 3D illustration with precise edges, blue-white palette, subtle soft ambient shading. Centered balanced 3:2 composition. No words, letters, numbers, UI frame, buttons, labels, background scenery or huge glow. Transparent background, clean alpha edges. The book fills lower-middle and ribbons rise upward outward, matching reference composition. Asset for native desktop welcome screen; beautiful on both light and deep navy.",
-  "reference": "C01-welcome.png",
-  "transparent": true,
-  "usage": "hero.welcome light and dark",
-  "status": "generated; visual QA pending final"
-}

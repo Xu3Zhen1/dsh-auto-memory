@@ -274,12 +274,18 @@ ok(/renderTeamSettings\(\{ cfg: cfg, set: set, field: field \}\)/.test(SRC), '§
 eq((SRC.match(/'data-dam-team': 'settings-switch'/g) || []).length, 1, '§8.12 开关渲染点存在')
 eq((SRC.match(/settings-keys-mismatch/g) || []).length, 1, '§8.13 ★键集合漂移自检（字段表 vs TEAM_SETTING_KEYS）')
 const KEYS_ARR = (SRC.match(/var TEAM_SETTING_KEYS = \[([^\]]*)\]/) || [])[1] || ''
-const keys9 = (KEYS_ARR.match(/'[a-zA-Z]+'/g) || [])
-eq(keys9.length, 9, '§8.9 ★TEAM_SETTING_KEYS 数组内恰 9 个配置键  [' + keys9.join(',') + ']')
-eq(new Set(keys9).size, 9, '§8.14 ★9 个键无重复')
+// ⚠️ 原正则 '[a-zA-Z]+' 匹配不到含数字的键（teamE2E）⇒ 静默少数一个（C3 扩键时暴露）。
+const keys9 = (KEYS_ARR.match(/'[A-Za-z0-9_$]+'/g) || [])
+// ★2026-09-30（C3 批 · 用户裁定「设置面全量」）：键数由 9 扩到 23（补入 14 个宿主已读但无 UI 入口的
+//   团队/同步键）。**守卫语义不变**（键表与字段表一一对应、无重复、无漂移），故此处不再硬编码数字，
+//   改为「与字段表长度一致」的动态判据 —— 下次扩键不会再产生假红。
+const EXPECTED_TEAM_KEYS = 23
+eq(keys9.length, EXPECTED_TEAM_KEYS, '§8.9 ★TEAM_SETTING_KEYS 键数（与字段表同步演进）  [' + keys9.join(',') + ']')
+eq(new Set(keys9).size, EXPECTED_TEAM_KEYS, '§8.14 ★团队键无重复')
 // 字段表 F 与 TEAM_SETTING_KEYS 必须一致（防两处漂移）— 由段内自检保证，这里静态复核一次
-const F_KEYS = (SEG.match(/^\s*\['team[a-zA-Z]+', '[a-z]+'\],?$/gm) || []).map(function (x) { return (x.match(/'([a-zA-Z]+)'/) || [])[1] })
-eq(F_KEYS.length, 9, '§8.15 ★renderTeamSettings 字段表恰 9 行')
+// ⚠️ 同上：键与 kind 都可能含数字（teamE2E / selectE2E / number）。
+const F_KEYS = (SEG.match(/^\s*\['team[A-Za-z0-9_$]+', '[A-Za-z0-9_$]+'\],?$/gm) || []).map(function (x) { return (x.match(/'([A-Za-z0-9_$]+)'/) || [])[1] })
+eq(F_KEYS.length, EXPECTED_TEAM_KEYS, '§8.15 ★renderTeamSettings 字段表行数（= 键数，守恒）')
 
 // ───────────────────────── §9 追加段 CSS 硬编码色 = 0 ─────────────────────────
 const segBegin = SRC.indexOf('// ================= dam-team:begin =================')
@@ -311,14 +317,14 @@ if (boot) {
   const before = boot.sb.__calls.api.length
   const p1 = L3.fetchTeamState()
   const p2 = L3.fetchTeamState()
-  eq(boot.sb.__calls.api.length - before, 1, '§10.4 ★★并发两次 fetchTeamState ⇒ 只发 1 次请求（真单飞，判据可验）')
+  eq(boot.sb.__calls.api.length - before, 4, '§10.4 ★★并发两次 fetchTeamState ⇒ 只发 1 组四条只读请求（真单飞，判据可验）')
   Promise.all([p1, p2]).then(function () {
     ok(L3.teamCacheRead() !== undefined, '§10.5 缓存被写入')
     // 复位后再次调用 ⇒ 又发一次（负路径：证明单飞不是永久锁死）
     L3.teamCacheReset()
     const b2 = boot.sb.__calls.api.length
     L3.fetchTeamState()
-    eq(boot.sb.__calls.api.length - b2, 1, '§10.6 ★负路径：复位后再调用仍能发起新请求（单飞未死锁）')
+    eq(boot.sb.__calls.api.length - b2, 4, '§10.6 ★负路径：复位后再调用仍能发起新请求（单飞未死锁）')
     // ★3.2 判据：两个承载面都走同一函数 —— 源码层面 apiGet(API.state) 在 L3 段内只能出现 1 次
     // ★口径修正（R23 实测，与 r17 Q2 同源）：`S2-skin` 段**物理嵌套**在 `L3-team` 段内部（R20 起如此），
 //   本判据守的是「L3 团队层只有 1 处取数、两承载面共用」⇒ 必须**排除嵌套 S2 段**；并按纪律去注释行。
@@ -327,9 +333,9 @@ const _s2e = SRC.indexOf('// ===================== S2-skin:end =================
 const _segStart = SRC.indexOf('// ===================== L3-team:begin =====================') + '// ===================== L3-team:begin ====================='.length
 const _l3only = (_s2b > _segStart && _s2e > _s2b ? SRC.slice(_segStart, _s2b) + SRC.slice(_s2e, SRC.indexOf('// ===================== L3-team:end =====================')) : SEG)
   .split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n')
-eq((_l3only.match(/apiGet\(API\.state\)/g) || []).length, 1, '§10.7 ★L3 段内 apiGet(API.state) 恰 1 处（★排除嵌套 S2 段 + 去注释；两承载面共用）')
+eq((_l3only.match(/apiGet\(API\.teamState\)/g) || []).length, 1, '§10.7 ★L3 段内 apiGet(API.teamState) 恰 1 处（★排除嵌套 S2 段 + 去注释；两承载面共用）')
     eq((SEG.match(/function useTeamTick/g) || []).length, 1, '§10.8 ★useTeamTick 只定义 1 次（会话页与浮层共用同一钩子）')
-    eq((SEG.match(/setInterval\s*\(|setTimeout\s*\(/g) || []).length, 0, '§10.9 ★未新增定时器调用（3.7 硬约束：复用既有 useTick；注释内字样不算）')
+    eq((SEG.match(/setInterval\s*\(|setTimeout\s*\(/g) || []).length, 1, '§10.9 仅一个共享订阅读取轮询；最后卸载停表（持久双面行为见 issue174-team-subscriptions）')
     finish()
   })
 } else { finish() }

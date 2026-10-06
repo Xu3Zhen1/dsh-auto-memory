@@ -120,9 +120,23 @@ const bh = (mask(CL).match(/#[0-9a-fA-F]{3,8}\b/g) || []).length
 const br = (mask(CL).match(/rgba?\(/g) || []).length
 /* ★R16：度量改为**真 import 共享模块**（tools/lib/appearance-scan.mjs）——
    此前 ㊵/㊶ 是本文件内第二份手写实现，与扫描器口径漂移（14 vs 35），属「半修」。 */
-const bare = scanAppearance(CL)
-ok(bare.hex === 0, '㊵ ★真·裸 hex 归零（35 → R16 14 → ★R17 0）实测 ' + bare.hex + '）')
-ok(bare.rgba === 0, '㊶ ★真·裸 rgba 归零（R16 真值 81 → ★R17 0；假数 276 系 var() 掩码漏括号+动态值误计，已修）实测 ' + bare.rgba + '）')
+// ★2026-10-01 口径修订（用户裁定 · 双轨制）：
+//   背景：默认档（经典/旧款）的浮层玻璃是**有意用字面量画**的 —— 它要「中性玻璃」，
+//   而 i5 那套 --i5-* / --dsw-alias-* 令牌在默认档下已被重定义成蓝白皮肤的值，
+//   引用令牌反而会把玻璃涂成蓝色（实测取色确认）。故该段必须写真值，属**正当例外**。
+//   裁定原话：「默认情况就是有玻璃的那个是守卫，守的是不默认的，就是一个社区创作者的皮肤插件」。
+//   ⇒ 本守卫的语义改为：**非默认档（社区创作者皮肤）必须零裸色值**；默认档玻璃段整体豁免。
+//   隔离方式：只把 `damLegacyOverlayGlass()` 的函数体挖掉再扫描（该段外仍须为 0）——
+//   实测挖掉后 hex=0 / rgba=0，说明**全部裸值都出自该段，别无遗漏**（不是放宽整文件）。
+// ★防「豁免变成放宽」：挖掉后必须**仍有实质内容**（不得为空/近空），否则断言会退化成恒真。
+const CL_SKINNABLE = CL.replace(/function damLegacyOverlayGlass\(\) \{[\s\S]*?\n    \}/, '')
+ok(CL_SKINNABLE.length > CL.length * 0.9, '㊵0 ★豁免后仍保留 ≥90% 源文（实测 ' + (CL_SKINNABLE.length / CL.length * 100).toFixed(1) + '%，防豁免退化为放宽）')
+const bare = scanAppearance(CL_SKINNABLE)
+ok(bare.hex === 0, '㊵ ★非默认档零裸 hex（默认档玻璃段豁免；段外实测 ' + bare.hex + '）')
+ok(bare.rgba === 0, '㊶ ★非默认档零裸 rgba（默认档玻璃段豁免；段外实测 ' + bare.rgba + '）')
+// 负路径守卫：豁免段必须**恰好是那一段** —— 若哪天它被删/被改坏，这条会立刻红
+const bareFull = scanAppearance(CL)
+ok(bareFull.hex > 0 && bareFull.rgba > 0, '㊷c ★默认档玻璃段确实存在且为字面量实现（hex=' + bareFull.hex + ' rgba=' + bareFull.rgba + '）')
 
 /* ---- ㊷b–㊹b ★R18 外观层收口（D1 / D9 核查）---- */
 /* ★度量复用共享模块（第 9 条纪律）：去注释后统计「有消费·无定义」。

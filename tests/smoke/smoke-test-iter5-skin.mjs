@@ -8,17 +8,101 @@ import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 
 const source = readFileSync(new URL('../../lib/client.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
-const classic = source.replace(/    \/\/ ITER5-GENERATED:BEGIN[\s\S]*?    \/\/ ITER5-GENERATED:END\n/, '')
-  .replace("+ DAM_SKIN_V4_CSS + '\\n' + ITER5_CSS + '\\n/* dam-skin:end (v4) */'", "+ DAM_SKIN_V4_CSS + '\\n/* dam-skin:end (v4) */'")
+// ★2026-09-30 双皮肤块（用户裁定：旧款为默认 + 三套变体经下拉选择）：
+//   生成区现有**两块**（legacy 旧款 + 三套变体）——本快照关心「剥掉生成区后的经典侧」，
+//   故两块都要拆；并把**分派行**归一回单分支形态，否则比对的就不是「经典档」而是「双块集成形态」。
+const classic = source
+  .replace(/    \/\/ ===== ITER5-LEGACY-GENERATED:BEGIN =====[\s\S]*?    \/\/ ===== ITER5-LEGACY-GENERATED:END =====\n/, '')
+  .replace(/    \/\/ ITER5-GENERATED:BEGIN[\s\S]*?    \/\/ ITER5-GENERATED:END\n/, '')
+  .replace("+ DAM_SKIN_V4_CSS + '\\n' + (damSkinLegacy() ? LEGACY_ITER5_CSS : ITER5_CSS) + '\\n/* dam-skin:end (v4) */'", "+ DAM_SKIN_V4_CSS + '\\n/* dam-skin:end (v4) */'")
+  .replace("h('div', { 'data-dam-skin-v4-root': '1' }, damSkinLegacy()\n            ? h(Legacy5Page, { nonce: nonce, onExit: function () { damSkinRemoveCss(); setNonce(nonce + 1) } })\n            : h(Iter5Page, { nonce: nonce, onExit:", "h('div', { 'data-dam-skin-v4-root': '1' }, h(DamSkinV4Page, { nonce: nonce, onExit:")
   .replace('h(Iter5Page, { nonce: nonce, onExit:', 'h(DamSkinV4Page, { nonce: nonce, onExit:')
   .replace("try { ensureStyle(); if (damSkinActive() === 'v4') damSkinEnsureCss() } catch", 'try { ensureStyle() } catch')
   .replace('function DialogHost() {\n      var tourDeep = useDeepTheme()\n      var tickPair = useTick()', 'function DialogHost() {\n      var tickPair = useTick()')
   .replace("tourStep === 0 ? h(SkinHero, { slot: 'hero.welcome', deep: tourDeep })", "tourStep === 0 ? h(SkinHero, { slot: 'hero.welcome', deep: useDeepTheme() })")
-// ★2026-09-30：本快照基线演进（PR #150/#155 合并到 v3.2.5 之后）——生成块**之外**的 client.js
-//   现包含 3.2.5 的合法修复（接续身份钉死 clickedSid、StatsTab/Iter5Stats 解包 data.stats、
-//   时间戳标题等），故快照哈希随之变化；守卫语义不变：
-//   生成块之外的任何**非意外**改动仍会被本锁抓住。
-assert.equal(createHash('sha256').update(classic).digest('hex'), '64aaba6a0d4736e542d21f1b4801f0efe367d3ad52e2944d94f1f65ed516f616', 'Reviewed native-reference entry baseline stays unchanged outside generated skin (nine-step navigation and contextual panel)')
+// ★2026-09-30：本快照基线演进（PR #150 移植到 3.2.5 之上）——生成块**之外**的 client.js 现包含 3.2.5 的合法修复
+//   （接续身份钉死 clickedSid、StatsTab/Iter5Stats 解包 data.stats），故快照哈希随之变化；
+//   守卫语义不变：生成块之外的任何**非意外**改动仍会被本锁抓住。
+// ★2026-09-30（B 批 · 皮肤可插拔入口，同一裁定续批）本快照第三次演进，归因：
+//   SkinPicker 新增「皮肤族四款直选」（基线 / 仪器 / 编辑 / 活水）+ 高亮口径覆盖四款；
+//   pick() 改写：家族档写 dam-skin-style（基线档还删 dam-skin 回到「未显式选过」语义，
+//   与三值模型一致）；主题层（用户自装）保持 dam-skin=v4 + dam-skin-variant 不变。
+//   动因：四款下拉原先只在变体页侧栏，默认档（基线块）无任何入口 ⇒ 皮肤切换死锁。
+//   功能性验收另见 smoke-test-skin-pluggable.mjs（真执行 flavor/pick 语义 + 变异必红）。
+// ★2026-09-30（C1 · 设置面补全，用户「三面必须全量同步」）本快照第四次演进，归因：
+//   经典档 SettingsPage 的 engine 分区新增 4 道真闸门控件（激活收件箱/影子检索/上下文桥/L0 索引）
+//   + 1 个只读诊断块（总闸·模式·档位·Python 运行时），并补 zh/en 字典条目。
+//   同期同内容已落到冻结基线块（skins/legacy/iter5-325.js.frozen）与生成变体块（跑生成器继承）。
+//   三面同步由 smoke-test-settings-parity.mjs 守卫（逐控件计数：4 键 x 3 面 = 12，缺一即红）。
+// ★2026-09-30（C2 · 注入预算/水位/接续归档 14 键）本快照第五次演进：经典档 engine/window 分区
+//   新增 14 个控件 + zh/en 各 28 条字典；同步落到冻结基线块与生成变体块（三面 14x3=42 处 set()）。
+//   三面同步守卫同步扩到 99 键（原 85），缺一即红。
+// ★2026-09-30（C3 · 团队/同步 23 键）本快照第六次演进：renderTeamSettings 单点定义（三面共用）扩展
+//   键表 9→23、字段表同步、新增三类渲染分支（selectTrans/selectE2E/number）、zh/en 各 23 条标签。
+//   同批修复守卫自身缺陷：l3-team 的键提取正则 [a-zA-Z]+ 漏掉含数字键（teamE2E）⇒ 改为 [A-Za-z0-9_$]+。
+// ★2026-09-30（D2 · 设置双向实时同步）本快照第七次演进：saveConfigPatch 成功后 emit 广播（唯一写出口
+//   一处收口）；两个 I5 入口（宿主设置面板 / 工作台设置页）各增一个「广播即重取」effect，含三条安全线
+//   （有草稿不覆盖用户输入 / busy 不重取 / 身份不符放弃）。功能性验收见 smoke-test-settings-sync.mjs。
+// ★2026-09-30（D3 · 提示词层镜像 12→23 逐字一致）本快照第八次演进：DEFAULT_PROMPT_LAYERS_CLIENT
+//   由 12 层扩为与服务端同键序的 23 层、逐字一致（此前 snapshotHead/snapshotWelcomeBody 为截断版）。
+//   守卫升级：g4-whiteboard 新增 G4-6d（键集相等 + 逐键求值比对），并把原 G4-6b 的键序假设改为花括号配对抽取。
+// ★2026-09-30（A 批 · 皮肤可插拔重构，用户裁定「基线永不变」）本快照再次演进，归因五条：
+//   (1) damSkinActive 由二值改三值（classic / v4 / iter5 = 默认）；
+//   (2) 新增 damSkinCssFlavor + damSkinCssText：样式表按当前皮肤分派，两份 CSS 绝不同时注入；
+//   (3) damSkinEnsureCss 由「有元素即 return」改为按 data-dam-skin-css 标记判等重建（修 P0：换肤不刷新）；
+//   (4) 挂载门与挂载期注入门由 === v4 放宽为 !== classic（否则默认档被挡在门外，皮肤整个不见）；
+//   (5) 经典侧入口按钮口径改为「经典 <-> 新皮肤族」。
+//   守卫语义不变：生成块之外的任何**非意外**改动仍会被本锁抓住。
+// ★2026-09-30 本快照第九次演进（F 批 · 皮肤可插拔收尾，增量归因）：
+//   (1) SkinPicker 旧「总卡」退场（用户报「两个对勾同时存在」根因：旧卡判据 cur===it.id 与族卡同时命中）；
+//   (2) pick() 家族档改**双写**：直接落 presentation.v1 + 调 iter5SetStyle（修「选了没反应」——
+//       变体块用模块级缓存读样式且靠广播重渲染，裸写盘不触发）；
+//   (3) 高亮判据收敛为「主题层 / 家族档 / 经典」三类互斥（旧总卡退场后不再需要第四支）；
+//   (4) 随之删除失效 i18n 词条（旧总卡标签，退场后零消费点）。
+//   守卫语义不变：生成块之外的任何**非意外**改动仍会被本锁抓住。
+// ★2026-09-30 本快照第十次演进（H2 批 · 向导 where 分区名对齐，用户裁定「留在向导，只把 where 改成与设置页一致」）：
+//   (1) TOUR_STEPS 内 7 处 where: L('自动记忆引擎', 'Semantic engine') ⇒ L('语义记忆总开关', 'Memory engine')——
+//       与设置页 sectionLabels.engine 实名对齐（该实名自合并后即为「语义记忆总开关」）；
+//       其中 3 处为既有、4 处为 F 批新增，同源同错，一并改完（避免半修）；
+//   (2) 附「向导 where ⇒ 设置页实名单」对照核验：11 个分区名逐条比对，本批后 4 种 where 取值中
+//       「语义记忆总开关」命中最多次（7 次），其余 3 种（记忆窗口 / 自动化 / 记忆中枢）为**批前既有**，未在本批范围内。
+//   守卫语义不变：生成块之外的任何**非意外**改动仍会被本锁抓住；本批期望值随之上移。
+// ★2026-10-02 本快照第十一次演进（审计修复批 F02/#184，增量归因）：
+//   手写区 DebugCenter 的 refresh() 原对 11 个端点发探活请求（其中 greet/workspaces/reflectAuto 是
+//   **有真实副作用的业务端点**：greet 缺缓存时真调模型 + 写 workbench.json 计数；reflectAuto 无
+//   pending 时回退最近日志日并整篇覆盖 reflections/<date>.md）⇒ 打开调试中心即产生真实写入。
+//   本批收敛为**单次只读 GET API.debug**，并把探测表从 11 端点缩到 1（诊断覆盖变窄，可接受）。
+//   守卫语义不变：生成块之外的任何**非意外**改动仍会被本锁抓住；本批期望值随之上移。
+// 2026-10-03 批次 C（审计修复 #186..#204 + R01/R02）：默认关闭/改写的共享入口有意演进，行为由 audit-* 套件覆盖；固化哈希按最终字节重钉。
+// ★2026-10-03 本快照第十二次演进（前端收尾批 5a–5d，增量归因）：
+//   (1) 手写区：useCardFull 缓存键带版本身份 + 失败不缓存 + 上限 256（G1-7/#195）；
+//   (2) 挂载根：MemoryPageView / MemoryPanelFloat 订阅 dam-skin-changed（G1-4/#196）；
+//   (3) 三处 SkinPicker onSwitch 无害化（同一项，源+产物成对）；
+//   (4) pyOk 白名单加 verified-ok（G1-5/#197 四处成组）；
+//   (5) normalizeGapRounds 上提到工厂层（G1-1，修「定义在 damSkinCssText 体内、调用点词法不可达」）；
+//   (6) I18N.ja 七个 __fn 占位还原真函数字面量 + t() 兜底（G1-2）；
+//   (7) G3 死壳摘除：DamSkinV4Page/Screen/Home/Welcome/Settings + DAM_SKIN_V4_PAGES/HOSTED、
+//       renderTeamSettings15 家族、TOUR_STEPS 的 window 暴露；StatsTab 缩进统一。
+//   (8) 同批为 tour 开关按钮补 'data-dam-tour-key' —— 让 G3 后的行为级验收能按配置键断言（不再读源码字符串）。
+//   守卫语义不变：生成块之外的任何**非意外**改动仍会被本锁抓住；本批期望值随之上移。
+// ★issue #211（2026-10-04）第十三次演进：Python 卸载入口（手写区 PySetupWizard 加二次确认按钮 +
+//   API.pyUninstall 新键 + 三语 pyWizUninstall/pyWizUninstallConfirm 文案）。守卫语义不变。
+// ★2026-10-06 本快照第十四次演进（INJ-1 · 注入分级三修，增量归因）：
+//   三面设置页的 fullEverySlims 界面回落值 3 → 10，与服务端 DEFAULT_CONFIG.fullEverySlims 同步：
+//   ①经典面（client.js 手写区）、②legacy 生成块、③frozen 源（skins/legacy/iter5-325.js.frozen）三面同改；
+//   动因：计数口径改为「精简版实际投递次数」后，出厂节奏定为「每满 10 次精简放行一次完整版」，
+//   界面若仍回落 3，用户一动设置页就会把 3 写回盘上，节奏被静默改回旧语义。
+//   守卫语义不变：生成块之外的任何**非意外**改动仍会被本锁抓住；本批期望值随之上移。
+// ★2026-10-06 本快照第十五次演进（R79 · 前端 V4-1/#238/#223）——手写区三处改动：
+//   ①#238（上游 PR#239 采纳）：浮窗 floatStyle 加 inline position:'fixed' + 节点加 role:'dialog'/aria-label
+//     （梦幻皮肤把 [data-dam-panel] 误判为 composer 并用普通特异性 position:relative 压过 fixed ⇒ 浮窗被挤进文档流）；
+//   ②#223：侧栏入口与**承载面**同源（旧实现无条件注册 ⇒ panelPos='page' 档下按钮点了无反应，是空按钮）；
+//   ③两处 label 去掉过期的 '(pre)'（pre 线术语 2026-09-23 已废弃）。
+//   ⚠️ 重钉复算必须用**本套件自己的算法**（剥两块生成区 + 四处归一化），不可另写一份简化剥离：
+//     2026-10-06 首轮误按「只去指纹行/首块注释」复算，得 6a9c0587…（错值），回归随即复红；
+//     改用本文件 14-22 行的 classic 表达式复算得 26b00133…，与锁一致。
+//   守卫语义不变：生成块之外的任何**非意外**改动仍会被本锁抓住。
+assert.equal(createHash('sha256').update(classic).digest('hex'), '26b00133b7eef7896bff5c66fe0dff50a895a739eca5c2eb57321a4f0f10883d', 'Reviewed native-reference entry baseline（R78 = R77 + 2026-10-05 批次 Y（PR#212 #5/#6 + PR#213 前端拆取，生成器线一次过）：①共享草稿设施 memoryNoteDrafts/memoryCalendarDrafts/memoryDraftIdentity(sessionId|ws)/memoryNoteWrites/calendarWrites/memoryOperations/useMemoryOperation/submitMemoryOperation/prepareSettingsPatch/TeamSecretInput 落手写区；②面板 close() 前置草稿脏确认 + beforeunload 保护；③refreshSem 加 WeakMap 代次（迟到的旧状态不覆盖新状态）；④经典 NotesTab/CalendarTab 草稿接入 + 按身份重挂；⑤两 I5 实例：i5Read/i5Busy/i5ConfigGeneration/i5Initialized/i5AppliedRead 五 ref + 统一 i5ApplyConfig（草稿恢复 i5Initialized 单次 + 已有草稿只提示不覆盖 + psec 水合）+ save/onEngineModeChange 推进代次并回显 migrated/warning 回执 + setBusy 包 ref 同步；⑥gateOk 改读生效基线 i5Base（草稿态不再冒充已生效）+ gate-readout 归入主闸卡；⑦生效水位读数 data-dam-effective-water（handoff-state 实测，广播重取）；⑧browseTo/openBrowser 请求代次守卫 + D2 广播重取升级为 i5Busy 感知 + 请求号；⑨migPickInto 三份统一 migAlive 幂等守卫（修 pr-213 frozen 份 request 未声明 ReferenceError 点名缺陷）；⑩ConnectTab/Iter5External 异步取数身份守卫（去 pr-213 重复行）；⑪#212 前端：三份 iter5MemorySnapshot 注入 noteSessionId + 三份 Iter5Note 发 sessionId+expectedNotesPath（X2 服务端必填）；⑫设置分组再平衡（fExclude/model 移区、slims 死键控件摘除、fJsExcerpt/fWaterThreshold disabled+说明、即时项 L3 标签、团队 http/folder 禁选+TeamSecretInput 密码框）；⑬字典修正（fAutoContinue/handoffSwitch/fHandoff/fWaterWindow zh/en/ja + fAutoMargin 0.3-1 + settings-copy fJsCooldown 分钟→轮）；⑭skins 源 views/ui/native-panel/settings-copy 同步 + frozen LF 镜像 + 生成器 replaceT/切片补丁/断言化（--check SYNC-OK）。；原 R77 = R76 + 2026-10-05 发版三件套（v3.2.9：指纹行 + 应用内 CHANGELOG 字典 3.2.9 条目；内容见 CHANGELOG.md 同版段）；原 R76 = R75 + 2026-10-04 发版三件套（v3.2.8：指纹行 + 应用内 CHANGELOG 字典 3.2.8 条目；内容见 CHANGELOG.md 同版段）；原 R75 = R74 + 2026-10-04 issue #211 前端：Python 引擎卸载按钮（二次确认）+ pyUninstall 路由键 + 三语体积披露；原 R74 = R72 + 2026-10-02 审计修复批 A+B（增量归因：手写区 DebugCenter 收敛为只读 GET + 团队层接 4 条专用路由（API 表新增 5 键）+ TeamTab 挂载补回调 + L3 段共享订阅轮询）；原 R72 = R71 + 2026-10-01 ①接续开关默认开 + 欢迎向导开关 ②经典档接入 GlobalBriefRow 简报抽屉 ③damSharedSurfaceCss classic 分支归零修复；原 R71 = R70 + 2026-10-01 全局动态简报批（client.js 三面各加 8 个 globalBrief* 控件 + frozen 面补齐上批遗漏的 slimEveryRounds/fullEverySlims 两键）；原 R70 = R69 + #160/#162 修复：python 向导轮询/取消渲染、规则草稿与内容锚定、首屏 tour hero 挂载复原；生成块之外任何**非意外**改动仍会被本锁抓住）')
 console.log('PASS reviewed shared-entry source baseline preserved')
 
 const css = readFileSync(new URL('../../skins/iter5/skin.css', import.meta.url), 'utf8')
@@ -46,12 +130,22 @@ const React = {
   useReducer(fn, initial) { const [state, set] = React.useState(initial); return [state, action => set(old => fn(old, action))] },
   useEffect(fn, deps) { const i = cursor++; const old = states[i]; if (!old || deps.some((d, n) => !Object.is(d, old[n]))) { states[i] = deps; effects.push(fn) } },
 }
-const localStorage = { getItem: () => null, setItem() {}, removeItem() {}, length: 0 }
+// ★2026-09-30（用户裁定）：默认皮肤改为 legacy（旧款）。本套件验收的是**仪器变体**的首页，
+//   故模拟存储显式给出 instrument（否则 Iter5Home 会按新默认走 legacy 分支——那是另一套首页，
+//   本套件的断言对象不在那里）。守卫语义不变：仪器首页必须保留日历与最近记录。
+const localStorage = { getItem: (k) => (k === 'dsh-auto-memory.presentation.v1' ? 'instrument' : null), setItem() {}, removeItem() {}, length: 0 }
 const document = { documentElement: { getAttribute: () => '', style: { setProperty() {} }, classList: { contains: () => false } }, querySelector: () => null, getElementById: () => null }
 const window = { localStorage, addEventListener() {}, removeEventListener() {}, confirm() { confirmCount++; return accept }, __ModuleLoader__: { load(def) { exposed = def.factory(name => { if (name === 'react') return React; throw Error('Test module unavailable: ' + name) }) } } }
 const context = vm.createContext({ window, document, localStorage, console: { log() {}, warn() {}, info() {}, error() {} }, navigator: { language: 'zh-CN' }, URL, URLSearchParams, requestAnimationFrame: fn=>fn(), setTimeout, clearTimeout, setInterval: () => 1, clearInterval() {}, fetch: () => { throw Error('Unexpected raw fetch') } })
 vm.runInContext(source.replace('    return module.exports', `    exports._i5test = { Iter5Notice: Iter5Notice, Iter5Summary: Iter5Summary, Iter5AutoContinue: Iter5AutoContinue, Iter5Storage: Iter5Storage, Iter5Migration: Iter5Migration, Iter5DeleteConfirmation: Iter5DeleteConfirmation, iter5WorkspaceLayout: iter5WorkspaceLayout, iter5MapLabel: iter5MapLabel, Iter5WorkspaceGraph: Iter5WorkspaceGraph, iter5SkillContent: iter5SkillContent, Iter5SkillBrowser: Iter5SkillBrowser, iter5SearchEntries: iter5SearchEntries, Iter5Note: Iter5Note, Iter5Search: Iter5Search, useIter5Data: useIter5Data, Iter5Home: Iter5Home, Iter5Settings: Iter5Settings, Iter5Tabs: Iter5Tabs, iter5MemoryRows: iter5MemoryRows, iter5MemorySnapshot: iter5MemorySnapshot, iter5LedgerTitle: iter5LedgerTitle, DialogHost: DialogHost, setDialog: function (d) { dialogState = d }, t: t,
-      transport: function (get, post) { apiGet = get; apiPost = post }, identity: function (value) { iter5Identity = function () { return value } } }
+      transport: function (get, post) { apiGet = get; apiPost = post }, identity: function (value) { iter5Identity = function () { return value } },
+      // ★批次 Y：草稿身份改由 memoryDraftIdentity()（会话|工作区）派生 ⇒ 守卫用 identity(value) 同步
+      //   注入 host sessions 快照（value 形如 'sid|ws'），与 iter5Identity 同源同值，跨会话隔离判据不变。
+      session: function (value) {
+        var parts = String(value).split('|')
+        var byId = {}; byId[parts[0]] = { cwd: parts[1] || '', retainedBy: { mainView: 1 } }
+        sessions = { list: { getSnapshot: function () { return { current: parts[0], ids: [parts[0]], byId: byId } } } }
+      } }
     return module.exports`), context, { filename: fileURLToPath(new URL('../../lib/client.js', import.meta.url)) })
 const test = exposed._i5test
 // Execute the host theme reader against both current DSH and older host markers.
@@ -168,13 +262,34 @@ window['dsh-auto-memory.wizStatus']={loaded:true,ready:false,download:{phase:'id
 test.setDialog(null);test.DialogHost();const hiddenHooks=cursor
 cursor=0;test.setDialog({kind:'welcomeTour',manual:true});const tour=test.DialogHost()
 assert(tour,'Welcome tour renders')
-const nativeNav=nodes(tour,n=>n.props?.['data-native-tour-nav']==='')[0]
-assert(nativeNav,'Welcome provides the approved native step navigation')
-assert.equal(nodes(nativeNav,n=>n.type==='button').length,9,'All actual welcome steps remain reachable')
-assert.equal(nodes(nativeNav,n=>n.props?.['aria-current']==='step').length,1,'Exactly one step is current')
-const welcomeToggles=window['dsh-auto-memory.TOUR_STEPS'].flatMap(step=>step.toggles||[])
-assert(welcomeToggles.some(t=>t.key==='workbenchEnabled'))
-assert(!welcomeToggles.some(t=>t.key==='workbenchRoot'),'Directory setting cannot be written as a boolean')
+// ★2026-10-01 判据升级（用户裁定「那就修守卫」）：原断言锚在**容器标识** data-native-tour-nav 上，
+//   而它要守的真实语义是「欢迎向导每一步都可达 + 当前步唯一」。H33 批按用户裁定恢复 3.2.5 观感、
+//   把步骤胶囊换成圆点条（data-dam-tour-dots）后**功能未变、容器名变了** ⇒ 锚点型断言转红。
+//   判据纪律：断言对象若是「某 class/属性名是否存在」即恒真守卫，不构成功能验收。
+//   此处改为**直接断言功能**，并接受两种容器名（旧 nav 条 / 新圆点条）：
+//   ① 步骤导航容器存在；② 步骤按钮数 = 实际步数；③ 每个步骤按钮都**真的可点**（有 onClick）；④ 当前步唯一。
+const navC=nodes(tour,n=>n.props?.['data-native-tour-nav']===''||n.props?.['data-dam-tour-dots']==='')[0]
+assert(navC,'Welcome provides step navigation (nav bar or dot rail)')
+const stepBtns=nodes(navC,n=>n.type==='button')
+assert.equal(stepBtns.length,9,'All actual welcome steps remain reachable')
+assert(stepBtns.every(n=>typeof n.props?.onClick==='function'),'Every welcome step is actually reachable (clickable)')
+assert.equal(stepBtns.filter(n=>n.props?.['aria-current']==='step').length,1,'Exactly one step is current')
+// ★2026-10-03（G3）：原断言读 window['dsh-auto-memory.TOUR_STEPS'] —— 那是**写给已摘除死壳 welcome 的
+//   暴露**（唯一消费者）。改判据为「不依赖任何 window 暴露」，直接从**真渲染出的向导步骤**按配置键收集：
+//   遍历每步导航按钮（真点击 → 真重渲染），收集该步 tour toggle 按钮上的 data-dam-tour-key。
+//   守卫语义不变（仍守「workbenchEnabled 在场、workbenchRoot 不得作为布尔写入」），且比原来更贴近真行为。
+// 取「末页汇总」里**真渲染出的**开关徽标（data-dam-tour-badge 文本 = 开关名 + 开/关）。
+//   末页汇总由 allToggles（= TOUR_STEPS 各步 toggles 的并集）派生 ⇒ 与「向导里到底有哪些开关」同源，
+//   但不依赖任何 window 暴露，也不需要逐页点击。
+// 末页汇总在**最后一步**才渲染 ⇒ 先真点最后一步导航，取该步**真渲染出的整棵树**做判据。
+stepBtns[stepBtns.length-1].props.onClick()
+cursor=0
+const lastStepText=JSON.stringify(test.DialogHost())
+// 判据（均在真渲染结果上判定，不读源码字符串、不依赖 window 暴露）：
+//   ① 向导里存在「记忆中枢」这一真开关（workbenchEnabled 的用户可见面）；
+//   ② 不存在「工作台目录」开关 —— 目录是字符串配置，把它当布尔写进配置是**曾经的缺陷形态**。
+assert(lastStepText.indexOf('记忆中枢')>=0,'Welcome tour exposes the memory-hub switch (workbenchEnabled)')
+assert(lastStepText.indexOf('工作台目录')<0,'Directory setting cannot be written as a boolean')
 assert.equal(cursor,hiddenHooks,'Hidden-to-visible welcome transition must not add hooks')
 cursor=0;test.setDialog(null);test.DialogHost()
 assert.equal(cursor,hiddenHooks,'Closing the welcome tour must not remove hooks')
@@ -221,19 +336,19 @@ console.log('PASS late results cannot cross session/workspace identity')
 // Execute panel draft and selectable search behavior through the shipped components.
 function renderNative(component, props) { cursor=0;const tree=component(props);effects.splice(0).forEach(fn=>fn());return tree }
 function resetNative() { states=[];effects=[];cursor=0 }
-resetNative();test.identity('note-session-a|workspace-a')
-let note=renderNative(test.Iter5Note,{persistDraft:'panel'})
+resetNative();test.identity('note-session-a|workspace-a');test.session('note-session-a|workspace-a')
+let note=renderNative(test.Iter5Note,{persistDraft:'panel',source:'/ws-a/MEMORY.md'})
 nodes(note,n=>n.type==='textarea')[0].props.onChange({target:{value:'Keep this unsaved note'}})
-resetNative();test.identity('note-session-b|workspace-b')
-note=renderNative(test.Iter5Note,{persistDraft:'panel'})
+resetNative();test.identity('note-session-b|workspace-b');test.session('note-session-b|workspace-b')
+note=renderNative(test.Iter5Note,{persistDraft:'panel',source:'/ws-a/MEMORY.md'})
 assert.equal(nodes(note,n=>n.type==='textarea')[0].props.value,'','A different session never receives the panel draft')
-resetNative();test.identity('note-session-a|workspace-a')
-note=renderNative(test.Iter5Note,{persistDraft:'panel'})
+resetNative();test.identity('note-session-a|workspace-a');test.session('note-session-a|workspace-a')
+note=renderNative(test.Iter5Note,{persistDraft:'panel',source:'/ws-a/MEMORY.md'})
 assert.equal(nodes(note,n=>n.type==='textarea')[0].props.value,'Keep this unsaved note','Closing and remounting restores the same-session draft')
 test.transport(async()=>({}),async()=>({ok:true}))
 note.props.onSubmit({preventDefault(){}})
 await new Promise(resolve=>setTimeout(resolve,0))
-resetNative();note=renderNative(test.Iter5Note,{persistDraft:'panel'})
+resetNative();note=renderNative(test.Iter5Note,{persistDraft:'panel',source:'/ws-a/MEMORY.md'})
 assert.equal(nodes(note,n=>n.type==='textarea')[0].props.value,'','A successful append clears the recovered draft')
 console.log('PASS panel drafts survive remount, isolate identities and clear only after append')
 resetNative()
@@ -333,28 +448,23 @@ assert.equal(nodes(progress,n=>n.props?.['aria-valuenow']!==undefined).length,0,
 console.log('PASS summary retains all host work details and continuation uses indeterminate progress')
 
 // Git may check out skin sources as CRLF on Windows and LF on Linux.
-// Both must produce the same normalized bundle without doubled CR bytes.
-const fixture=mkdtempSync(path.join(tmpdir(),'iter5-generator-'))
-try {
-  for(const dir of ['lib','tools','skins/iter5'])mkdirSync(path.join(fixture,dir),{recursive:true})
-  writeFileSync(path.join(fixture,'tools/build-iter5-skin.mjs'),readFileSync(new URL('../../tools/build-iter5-skin.mjs',import.meta.url)))
-  for(const newline of ['\n','\r\n']) {
-    for(const name of ['settings-copy.js','style-choice.js','alternate-home.js','style-variants.css','ui.js','views.js','surfaces.js','native-panel.js','native-workbench.js','skin.css','native-tour.css','native-panel.css','native-settings.css','native-workbench.css','native-library.css','native-search.js','native-operations.css','native-skills.js','native-storage.js','native-team.js','native-map.js','native-messages.js','native-secondary.css']) {
-      const text=readFileSync(new URL('../../skins/iter5/'+name,import.meta.url),'utf8').replace(/\r\n/g,'\n')
-      writeFileSync(path.join(fixture,'skins/iter5',name),text.replace(/\n/g,newline))
-    }
-    writeFileSync(path.join(fixture,'lib/client.js'),source.replace(/\n/g,newline))
-    execFileSync(process.execPath,[path.join(fixture,'tools/build-iter5-skin.mjs')])
-    execFileSync(process.execPath,[path.join(fixture,'tools/build-iter5-skin.mjs'),'--check'])
-    const generated=readFileSync(path.join(fixture,'lib/client.js'),'utf8')
-    assert(!generated.includes('\r\r'),'No doubled carriage returns')
-    assert.equal(generated.replace(/\r\n/g,'\n'),source,'Line ending conversion does not alter bundle content')
-  }
-} finally {
-  assert(path.dirname(fixture)===path.resolve(tmpdir())&&path.basename(fixture).startsWith('iter5-generator-'))
-  rmSync(fixture,{recursive:true,force:true})
-}
-console.log('PASS generator is idempotent with LF and CRLF checkouts')
+// ★2026-10-01 移除（用户裁定「把那一个失败删掉，不然以后还会有误解」）：
+//   原「生成器幂等」段（实测约 26 行）在临时 fixture 里**真跑 tools/build-iter5-skin.mjs**，
+//   而该生成器当前**在真实 client.js 上会把整个生成块吞掉**——根因是它用非贪婪跨行正则
+//   /^([ \t]*)useEffect\(\)\{[\s\S]*?\n\1\}, \[\]\)$/gm 配对 useEffect 起止：
+//   它靠**缩进相同**猜嵌套，遇到 2477 行的块（内含同缩进 useEffect）就从块首一路吃到最远的
+//   `}, [])`，实测吞掉 523,664 字符（含整个生成块）⇒ 产物从 1.79M 缩到 1.50M、回归 2→11 红。
+//   ⇒ 该守卫在生成器修好前**恒为红**，留下的唯一作用是把「生成器坏了」这件事误报成
+//   「皮肤功能退化」，让后续排查走偏。故整段移除；待生成器改正则配对后由维护者按需恢复
+//   （判据：生成器能在当前 client.js 上幂等重跑，且 --check 通过）。
+//   注：生成器本身的另外两个缺陷已在本轮修复（计数被注释喂饱 / 摘块丢弃插入锚）。
+//
+//   ★2026-10-02 恢复（G0-4）：判据已实测满足——生成器改用**括号配平**找块边界（不再依赖缩进
+//   猜嵌套），在当前 client.js 上真实重跑逐字节不变、--check 绿（SYNC-OK）。
+//   恢复后的守卫**不放在本套件内**，而是独立成 tests/smoke/smoke-test-generator-idempotent.mjs：
+//   它真跑生成器（backup/finally 还原）、断言 H1 === H0，并补 R2 负路径（默认停机 / --force 覆盖）。
+//   放在独立套件的原因：本套件是皮肤**产物**守卫，生成器**幂等**守卫应当各自独立计时与归因
+//   ——2026-10-01 的教训正是「生成器坏了」被误报成「皮肤功能退化」。
 
 // Topic deduplication, readable labels and non-actionable topic semantics.
 const uniqueGraph = test.iter5WorkspaceLayout([{path:'/fixture',name:'Fixture',items:['Topic',' Topic ', 'Other']}], {})

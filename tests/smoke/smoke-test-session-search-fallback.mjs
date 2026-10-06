@@ -107,7 +107,10 @@ host._sessionQuery = { searchSessions: async () => { throw new Error('session-se
 const r1 = await host.searchSessionHistory('水位 感知', 8)
 ok(Array.isArray(r1) && r1.length >= 2, '①兜底非空(命中+说明行)', r1.length)
 ok(r1.some((l) => l.includes('水位感知阈值') || l.includes('水位')), '①命中词出现在 snippet')
-ok(r1[r1.length - 1].includes('兜底口径') && r1[r1.length - 1].includes('覆盖最近'), '①尾部兜底说明行')
+// ★2026-10-01 判据更新（移植上游 #162）：说明行文案由「按修改时间覆盖最近 N 个会话」
+//   改为「按修改时间从新到旧…头部受预算限制…非全量」——措辞变了，语义未变。
+//   判据改为「尾部有兜底口径说明行 + 声明了分页/预算边界（非全量）」，不再绑定旧措辞。
+ok(r1[r1.length - 1].includes('兜底口径') && r1[r1.length - 1].includes('非全量'), '①尾部兜底说明行(含非全量声明)')
 ok(r1[0].startsWith('· [2026-'), '①条目形状与宿主索引同构(日期头)', r1[0].slice(0, 20))
 // 巨型文件（cccc-3333，17MB）必须被 16MB 预算纪律跳过 ⇒ 其专属命中词不成为条目
 const r1b = await host.lexicalSessionScanFallback('巨型会话', 8)
@@ -134,7 +137,10 @@ ok(r5.length >= 2 && r5.some((l) => l.includes('proj-b')), '⑤第二会话可�
 
 // ── ⑥ 变异检查：兜底说明行字面量被改 ⇒ 红 ──
 {
-  const mutated = body.replace("兜底口径", "兜底口径X")
+  // ★2026-10-01 判据更新（移植上游 #162）：产线现含**两处**「兜底口径」字面量（searchSessionHistory
+  //   的 catch 与 lexicalSessionScanFallback 的 finish）——String.replace 只换第一处，真正走到的那处
+  //   没被变异 ⇒ 断言恒红（假绿失效）。改用带 g 的正则，保证全量变异。
+  const mutated = body.replace(/兜底口径/g, "兜底口径X")
   const factory = new Function('path', 'readdirSync', 'readFileSync', 'statSync', 'existsSync',
     'zstdDec', 'decodeZstdFramesHead', 'dateStrOf', 'dshHome', `return class SessHostM {\n  ${mutated}\n}`)
   const M = factory(pathModule, fsSync.readdirSync, fsSync.readFileSync, fsSync.statSync, fsSync.existsSync,

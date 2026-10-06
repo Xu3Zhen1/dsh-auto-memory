@@ -42,7 +42,8 @@ eq(rBad.placeholder, true, 'A8 ★负路径：未知 key ⇒ 确定性占位（�
 ok(typeof rBad.alt === 'string' && rBad.alt.length > 0, 'A9 ★负路径：占位仍带 alt')
 
 /* ── B. ★★6 槽位**全部真上页面**（本轮核心） ── */
-const classicSlots = SRC.replace(/    \/\/ ITER5-GENERATED:BEGIN[\s\S]*?    \/\/ ITER5-GENERATED:END\r?\n/, '')
+// ★2026-09-30 双皮肤块：经典源 = 两块生成区全剥掉后的剩余部分。
+const classicSlots = SRC.replace(/    \/\/ ===== ITER5-LEGACY-GENERATED:BEGIN =====[\s\S]*?    \/\/ ===== ITER5-LEGACY-GENERATED:END =====/, '').replace(/    \/\/ ITER5-GENERATED:BEGIN[\s\S]*?    \/\/ ITER5-GENERATED:END\r?\n/, '')
 function callsOf(name) { return (classicSlots.match(new RegExp('h\\(' + name + '\\b', 'g')) || []).length }
 ok(callsOf('SkinSlot') >= 2, 'B1 SkinSlot 被调用（≥2：hero + empty 两条路）')
 ok(callsOf('SkinImg') >= 3, 'B2 SkinImg 被调用（≥3）')

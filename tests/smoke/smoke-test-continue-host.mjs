@@ -12,6 +12,7 @@
  *   H9 无 workspaceRegistry 服务 → 不抛错、workspaceId=''
  */
 import { apply } from '../../lib/index.js'
+import { continuedSourceFile, releaseContinuedSource } from '../../lib/continuation-state.js'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -50,12 +51,13 @@ lines.push(JSON.stringify({ type: 'tool/result', data: { message: { role: 'tool'
 lines.push(JSON.stringify({ type: 'request/header', data: { header: { config: { provider: 'deepseek-official', model: MODEL, reasoningEffort: 'max' } } } }))
 writeFileSync(path.join(sidDir, 'session.jsonl'), lines.join('\n') + '\n', 'utf8')
 
+const controllerHolder = { sc: undefined }
 const registryHolder = { reg: { list: () => [{ id: 'ws-continue-1', path: WS_PATH, sessionIds: [SID] }] } }
 const routes = []
 const handlers = {}
 const effects = []
 const ctx = {
-  get(name) { return name === 'workspaceRegistry' ? registryHolder.reg : undefined },
+  get(name) { return name === 'workspaceRegistry' ? registryHolder.reg : name === 'sessionController' ? controllerHolder.sc : undefined },
   on(ev, fn) { handlers[ev] = fn; return () => {} },
   effect(fn) { effects.push(fn); return () => {} },
   systemPrompt: { section() { return () => {} }, context() { return () => {} } },
@@ -230,13 +232,44 @@ console.log('[continue-host] H11 源会话文件缺失时拒绝 _lastAgent 顶�
   handlers['agent/session-start']({ agent: { session: { id: OTHER_SID, header: { cwd: OTHER_WS } } }, source: 'test' })
   await sleep(300)
   const r11 = await call(API.cont, 'POST', { fromSessionId: GHOST_SID })
-  ok(r11 && r11.ok === true, 'H11 ghost 源会话仍能出材料(诚实降级,不炸)')
-  ok(r11.prevSessionId === GHOST_SID, 'H11 身份不漂:prevSessionId=ghost(' + String(r11 && r11.prevSessionId) + '),未被最近活跃会话顶替')
-  ok(r11.model === '' && r11.provider === '', 'H11 模型不漂:未把 other 的 provider/model 继承给新会话')
-  ok(r11.transcriptPath === '' && !existsSync(r11.transcriptPath || 'x'), 'H11 无转写包(ghost 无文件,不拿别人的包充数)')
-  ok(!String(r11.carryText || '').includes('H11OTHER-ONLY-MARKER'), 'H11 材料不漂:other 的独有正文未混进 carry')
-  ok(r11.wsFallback === true, 'H11 wsFallback=true(工作区定位不到,显式告知而非静默)')
-  ok(r11.workspaceId === '', 'H11 workspaceId 解析不到 => 空串(client 回退 cwd,不猜)')
+  ok(r11 && r11.ok === false && r11.error === 'source workspace unavailable',
+    'H11 未知源工作区明确拒绝材料，不把其他任务或启动目录当源')
+  ok(!String(r11.carryText || '').includes('H11OTHER-ONLY-MARKER'), 'H11 不混入别人的线程')
+}
+
+console.log('[continue-host] H12 真实插件路由：未知投递保留pending、核实后恢复并幂等')
+{
+  const ctlCalls = []
+  let rejectDelivery = true, created = 0
+  controllerHolder.sc = {
+    cancel: async r => ctlCalls.push(['cancel', r.sessionId]),
+    create: async r => { ctlCalls.push(['create', r]); return { sessionId: 'session-integration-new-' + (++created) } },
+    rename: async () => {}, selectModel: async () => {},
+    prompt: async r => {
+      ctlCalls.push(['prompt', r.sessionId])
+      if (rejectDelivery && r.sessionId !== SID) throw new Error('integration delivery rejected')
+      return { accepted: true }
+    },
+  }
+  await call(API.config, 'POST', { handoffEnabled: false, autoContinueEnabled: false })
+  const decidePath = '/api/dsh-auto-memory/auto-continue-decide'
+  const first = await call(decidePath, 'POST', { action: 'manual', sessionId: SID })
+  ok(first && !first.ok && first.error.includes('integration delivery rejected'), 'H12 投递拒绝透出真实错误')
+  const doneFile = path.join(home, 'memory', 'auto-continue-done.json')
+  const sourceKey=SID.replace(/^session-/, ''), recordFile=continuedSourceFile(doneFile,sourceKey)
+  ok(!existsSync(doneFile) && JSON.parse(readFileSync(recordFile,'utf8')).status === 'pending', 'H12 保留独立pending记录，不修改旧闩锁文件')
+  const blocked=await call(decidePath,'POST',{action:'manual',sessionId:SID})
+  ok(blocked && !blocked.ok && blocked.continuationPending && blocked.sessionId==='session-integration-new-1' && created===1, 'H12 未核实的投递错误不能盲目再建会话')
+  // The fake controller conclusively rejected delivery. Operator recovery is
+  // explicit; production never infers this from an arbitrary exception string.
+  await releaseContinuedSource(doneFile,sourceKey,JSON.parse(readFileSync(recordFile,'utf8')).token)
+  rejectDelivery = false
+  const retried = await call(decidePath, 'POST', { action: 'manual', sessionId: SID })
+  ok(retried && retried.ok && retried.sessionId === 'session-integration-new-2', 'H12 源会话仍可成功重试')
+  ok(JSON.parse(readFileSync(recordFile,'utf8')).status==='done' && JSON.parse(readFileSync(recordFile,'utf8')).to==='session-integration-new-2', 'H12 接受材料后才持久化真实后继')
+  const replay = await call(decidePath, 'POST', { action: 'manual', sessionId: SID })
+  ok(replay && replay.ok && replay.sessionId === retried.sessionId && created === 2, 'H12 重复请求返回已有后继，不再建第三个会话')
+  ok(ctlCalls[0][0] === 'cancel' && ctlCalls[0][1] === SID, 'H12 手动入口也停止指定旧回合')
 }
 
 for (const d of effects) { try { if (typeof d === 'function') d() } catch (e) {} }

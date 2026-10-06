@@ -52,3 +52,22 @@
 [data-dam-theme] [data-dam-panel][data-compact=false]>[data-dam-body]{padding:16px 20px;overflow:auto;flex:1;min-height:0;}
 [data-dam-theme] [data-dam-panel][data-compact=false] [data-dam-tabs-wrap]{flex:none;}
 @container dam-panel (min-width:720px){[data-dam-theme] [data-dam-panel][data-compact=false]>[data-dam-body]{padding:18px 24px;}}
+
+/* ★2026-10-01 全局简报抽屉（用户裁定 B 方案：一行汇总 + 展开为逐条清单）。
+   语义归位：简报 = 继承其他 Agent 的记忆，故落在「外部来源」页内，而非长会话接续分区。 */
+[data-dam-theme] .i5-brief-row{margin:0 0 14px;border:1px solid var(--i5-hairline, rgba(128,128,128,.22));border-radius:12px;background:var(--i5-recess, rgba(128,128,128,.06));overflow:hidden;}
+[data-dam-theme] .i5-brief-head{display:flex;align-items:center;gap:10px;width:100%;padding:11px 13px;background:none;border:0;cursor:pointer;text-align:left;color:inherit;font:inherit;}
+[data-dam-theme] .i5-brief-head:hover{background:var(--i5-hover, rgba(128,128,128,.08));}
+[data-dam-theme] .i5-brief-title{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
+[data-dam-theme] .i5-brief-title strong{font-size:calc(12.5px * var(--dam-user-scale,1));}
+[data-dam-theme] .i5-brief-title small{opacity:.66;font-size:calc(11px * var(--dam-user-scale,1));}
+[data-dam-theme] .i5-brief-caret{width:8px;height:8px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);opacity:.55;transition:transform .18s ease;flex:none;margin-right:2px;}
+[data-dam-theme] .i5-brief-caret[data-open="true"]{transform:rotate(-135deg);}
+[data-dam-theme] .i5-brief-body{padding:2px 13px 12px;border-top:1px solid var(--i5-hairline, rgba(128,128,128,.18));}
+[data-dam-theme] .i5-brief-list{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:7px;}
+[data-dam-theme] .i5-brief-list li{display:flex;align-items:baseline;gap:8px;min-width:0;}
+[data-dam-theme] .i5-brief-kind{flex:none;font-size:calc(10.5px * var(--dam-user-scale,1));padding:1px 6px;border-radius:5px;background:var(--i5-tag-bg, rgba(128,128,128,.16));opacity:.85;}
+[data-dam-theme] .i5-brief-path{font-family:var(--i5-mono, ui-monospace, monospace);font-size:calc(11px * var(--dam-user-scale,1));word-break:break-all;opacity:.9;}
+[data-dam-theme] .i5-brief-src{flex:none;font-size:calc(10.5px * var(--dam-user-scale,1));opacity:.5;}
+[data-dam-theme] .i5-brief-foot{margin:9px 0 0;font-size:calc(10.5px * var(--dam-user-scale,1));opacity:.55;}
+@media(prefers-reduced-motion:reduce){[data-dam-theme] .i5-brief-caret{transition:none;}}

@@ -105,20 +105,51 @@ t('G4-6 ★【2026-09-20 用户裁定】铭文恢复收尾自检正文——三�
   assert(tpl.length <= 1200, '★ 铭文须守住每轮成本(≤1200 字符), 实测 ' + tpl.length)
 })
 
-t('G4-6b ★ 铭文与服务端逐字一致(镜像漂移守卫)', () => {
-  // ⚠️ 不比源码字面量：两侧拼接缩进不同（服务端 4 空格 / 客户端 8 空格），
-  //    字面比对必然误红。**取求值后的真实文本**再比 —— 这才是"用户实际看到的"。
-  //    锚点：client.js 里 snapshotInscription 的下一个字段是 snapshotTail，用它划边界。
+/** 从 client.js 抽取 DEFAULT_PROMPT_LAYERS_CLIENT 并**求值**为真实对象（花括号配对，与键序解耦）。 */
+function evalClientLayers() {
   const cliSrc = readFileSync(path.resolve(HERE, '..', '..', 'lib', 'client.js'), 'utf8')
-  const m = cliSrc.match(/snapshotInscription:\s*([\s\S]*?),?\s*\r?\n\s*snapshotTail:/)
-  assert(m, '应能从 client.js 提取 snapshotInscription 表达式')
-  // 去掉行间缩进与换行续接符（保留 `+` 连接符，否则字面量会粘连报语法错）。
-  // ⚠️ 字符串内部的 `\n` 是**字面反斜杠+n**（两个字符），不会被 \r?\n 命中，安全。
-  const expr = m[1].replace(/\r?\n\s*\+\s*/g, '+').trim().replace(/,$/, '')
-  const cliVal = new Function('return ' + expr)()
+  const i = cliSrc.indexOf('var DEFAULT_PROMPT_LAYERS_CLIENT = {')
+  assert(i >= 0, '应能从 client.js 定位 DEFAULT_PROMPT_LAYERS_CLIENT')
+  const braceStart = cliSrc.indexOf('{', i)
+  let depth = 0, end = braceStart
+  for (let k = braceStart; k < cliSrc.length; k++) {
+    if (cliSrc[k] === '{') depth++
+    else if (cliSrc[k] === '}') { depth--; if (depth === 0) { end = k; break } }
+  }
+  return new Function('return ' + cliSrc.slice(braceStart, end + 1))()
+}
+t('G4-6b ★ 铭文与服务端逐字一致(镜像漂移守卫)', () => {
+  // ⚠️ 不比源码字面量：两侧拼接缩进不同（服务端 4 空格 / 客户端 6 空格），字面比对必然误红。
+  //   **取求值后的真实文本**再比 —— 这才是"用户实际看到的"。
+  // ★2026-09-30（D3）：原实现用「下一个字段是 snapshotTail」当边界；D3 把客户端镜像补齐为与
+  //   服务端**同一键序**的 23 层后，snapshotInscription 的下一个键变成 snapshotSlimNote ⇒ 旧假设失效。
+  //   现改为复用下面 G4-6d 的通用抽取（按花括号配对整块求值），与键序彻底解耦。
+  const cliObj = evalClientLayers()
+  const cliVal = cliObj.snapshotInscription
   assert(typeof cliVal === 'string' && cliVal.length > 0, '客户端铭文求值应为非空字符串')
   const srv = DEFAULT_PROMPT_LAYERS.snapshotInscription
   assert(srv === cliVal, '★ 服务端与客户端铭文必须逐字一致（服务端 ' + srv.length + ' 字符 / 客户端 ' + cliVal.length + ' 字符）')
+})
+
+t('G4-6d ★ 提示词层镜像：客户端 25 层与服务端逐键逐字一致（D3 / 2026-09-30，2026-10-01 +2 层）', () => {
+  // 用户裁定「设置页必须全量同步，不能有缺少」。此前客户端镜像只有 12 层，且 snapshotHead /
+  // snapshotWelcomeBody 是截断版（46/49 字符 vs 服务端 302/149）⇒ 设置页「提示词层级」展示的
+  // 内容与实际注入不符（用户以为某层没注入，实为镜像缺失）。
+  // 判据：①键集完全相等；②逐键**求值后**的字符串逐字相等。
+  const cliObj = evalClientLayers()
+  const srvKeys = Object.keys(DEFAULT_PROMPT_LAYERS)
+  const cliKeys = Object.keys(cliObj)
+  assert(srvKeys.length === 25, '服务端层数应为 25（实测 ' + srvKeys.length + '）')
+  const missing = srvKeys.filter((k) => !cliKeys.includes(k))
+  const extra = cliKeys.filter((k) => !srvKeys.includes(k))
+  assert(missing.length === 0, '★ 客户端缺失层: ' + missing.join(', '))
+  assert(extra.length === 0, '★ 客户端多出层: ' + extra.join(', '))
+  const drift = []
+  for (const k of srvKeys) {
+    if (typeof cliObj[k] !== 'string') { drift.push(k + '(非字符串)'); continue }
+    if (cliObj[k] !== DEFAULT_PROMPT_LAYERS[k]) drift.push(k + '(服务端 ' + String(DEFAULT_PROMPT_LAYERS[k]).length + ' vs 客户端 ' + cliObj[k].length + ' 字符)')
+  }
+  assert(drift.length === 0, '★ 逐字漂移: ' + drift.join('; '))
 })
 
 // ─────────────────────────────────────────────────────────────

@@ -1,9 +1,0 @@
-{
-  "checks": [
-    "Failed config read disables welcome writes and offers retry",
-    "Failed welcome save reverts switch and displays error",
-    "Welcome save retry succeeds",
-    "Original welcome switch restored"
-  ],
-  "errors": []
-}

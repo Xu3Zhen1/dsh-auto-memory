@@ -16,7 +16,6 @@ import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import * as RL from '../../lib/rules-layer.js'
 import * as NS from '../../lib/note-status.js'
-import { listRuleItemsPre } from '../../lib/rules-edit.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -97,28 +96,10 @@ ok(/applyRuleEditPre\(engine/.test(routeBlock), '前端路由走同一写盘口'
 ok(!/writeFull\(/.test(routeBlock), '路由内不再自带第二套写入')
 
 console.log('[G7] 写盘口真行为（真 fs 临时目录）')
-function extractFn(header) {
-  const i = SRC_IX.indexOf(header)
-  if (i < 0) throw new Error('未找到：' + header)
-  // ★从**形参列表结束**后的第一个 { 起算 —— 形参默认值里也有 {}（payload = {}, opts = {}），
-  //   直接找第一个 { 会从默认值开始配平 ⇒ 函数体被提前截断（本守卫首版即撞上此坑）
-  let s = SRC_IX.indexOf('{', SRC_IX.indexOf(')', i)), d = 0
-  for (let j = s; j < SRC_IX.length; j++) {
-    if (SRC_IX[j] === '{') d++
-    else if (SRC_IX[j] === '}') { d--; if (d === 0) return SRC_IX.slice(i, j + 1) }
-  }
-  throw new Error('花括号不平衡：' + header)
-}
-const src = extractFn('async function applyRuleEditPre(engine, op, payload = {}, opts = {})')
-// ★#147（2026-09-30）：applyRuleEditPre 删除分支新增 stripOrphanAnchorsPre 引用（模块级绑定）——
-//   抽取重建的作用域里没有它 ⇒ 必须按注入表纪律一并注入，否则 ReferenceError 被外层 catch 吞掉，
-//   表现为「独占卡删除静默不生效」（与 autocont-host 夹具 contTitleStampPre 同款坑）。
-const apply = new Function('listRuleItemsPre', 'appendRuleItemPre', 'updateRuleItemPre', 'removeRuleItemPre', 'stripOrphanAnchorsPre',
-  'return ' + src)(listRuleItemsPre,
-  (await import('../../lib/rules-edit.js')).appendRuleItemPre,
-  (await import('../../lib/rules-edit.js')).updateRuleItemPre,
-  (await import('../../lib/rules-edit.js')).removeRuleItemPre,
-  (await import('../../lib/index.js')).stripOrphanAnchorsPre)
+// ★2026-10-01：#160 起 applyRuleEditPre 依赖 readFile / createHash / memoryWriteLockKey 等
+//   **模块级绑定**，「抽取源码 + new Function 重建作用域」的旧夹具式做法会把 ReferenceError
+//   喂给外层 catch 吞掉（表现为 list 静默返回 {ok:false}）。上游改为**真 import**，本仓同步。
+const { applyRuleEditPre: apply } = await import('../../lib/index.js')
 ok(typeof apply === 'function', 'applyRuleEditPre 可被取出运行')
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'p9-rules-'))

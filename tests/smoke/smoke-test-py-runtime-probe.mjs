@@ -112,10 +112,12 @@ const SRC_CLI = fs.readFileSync(path.join(ROOT, 'lib/client.js'), 'utf8')
   ok(occ(SRC_CLI, '已实测启动') >= 2, 'F2 就绪态明确标注"已实测启动"（区分于旧的文件在就绪）')
   ok(occ(SRC_CLI, '尚未实测启动') >= 2, 'F2b ready-unverified 态如实标注"尚未实测"')
   ok(occ(SRC_CLI, '检测到开发值') >= 4, 'F3 ★开发值提示（原则③）', occ(SRC_CLI, '检测到开发值'))
-  ok(occ(SRC_CLI, "pr.state === '") === 8, 'F4 前端三态以后端权威 state 为准（2 面板 × 4 态）', occ(SRC_CLI, "pr.state === '"))
+  // ★2026-09-30 双皮肤块：设置面板现有**三份**文本——旧款块 + 新块 + SettingsPage 模板源码，
+  //   故计数由 "2 面板 × N" 变为 "3 份文本 × N"。守卫语义不变：三欄代码均须存在。
+  ok(occ(SRC_CLI, "pr.state === '") === 12, 'F4 前端三态以后端权威 state 为准（3 份文本 × 4 态）', occ(SRC_CLI, "pr.state === '"))
   ok(occ(SRC_CLI, 'pr.worker.reason') >= 2, 'F5 ★worker 失败原因外显（原则②：报错摆在脸上）')
-  ok(occ(SRC_CLI, "state === 'start-failed' || det.pythonRuntime.state === 'deps-failed'") === 4, 'F6 "一切就绪"绿灯尊重运行时真值（2 面板 × gate+pyBad）')
-  ok(occ(SRC_CLI, 'pyModeNow') === 4, 'F7 ★矛盾文案修复：失败态下按当前模式区分措辞（"当前选的就是 Python 档"）')
+  ok(occ(SRC_CLI, "state === 'start-failed' || det.pythonRuntime.state === 'deps-failed'") === 6, 'F6 "一切就绪"绿灯尊重运行时真值（3 份文本 × gate+pyBad）')
+  ok(occ(SRC_CLI, 'pyModeNow') === 6, 'F7 ★矛盾文案修复：失败态下按当前模式区分措辞（3 份文本）')
 }
 
 console.log('\n结果: ' + pass + ' PASS / ' + fail + ' FAIL')

@@ -94,7 +94,11 @@
     async function iter5MemorySnapshot() {
       // /list has no workspace parameter on upstream 3.2.1. Prime the current
       // workspace through /state, then reject any list from a different root.
-      var state = await apiGet(API.state, { ws: currentWs() })
+      // ★批次 Y（#212 claim2 前端）：快照注入 noteSessionId —— 笔记表单据此发
+      //   sessionId + expectedNotesPath（服务端 X2 两字段必填，缺失即 400）。
+      var noteSessionId = currentSessionIdClient()
+      var state = await apiGet(API.state, { ws: currentWs(), sessionId: currentSessionIdClient() })
+      state = Object.assign({}, state, { noteSessionId: noteSessionId })
       var list = await apiGet(API.list)
       var expected = String(state.notesPath || '').replace(/[\\/][^\\/]+$/, '').replace(/\\/g, '/')
       var actual = String(list.projectDir || '').replace(/\\/g, '/')
@@ -105,7 +109,7 @@
       var rowsData = useIter5Data(iter5MemorySnapshot, [props.nonce])
       var intent = props.intent || {}
       var filter = useState(intent.category || 'all'), scope = useState(intent.scope || 'all'), query = useState(''), selected = useState(intent.path || '')
-      var append = useState(false)
+      var append = useState(function(){return !!memoryNoteDrafts[memoryDraftIdentity()]})
       var reader = useRef(null)
       var rows = rowsData.data ? iter5MemoryRows(rowsData.data[0], rowsData.data[1]).filter(function (r) {
         return (filter[0] === 'all' || r.kind === filter[0]) && (scope[0] === 'all' || r.scope === scope[0]) && (r.label + ' ' + r.path).toLowerCase().indexOf(query[0].toLowerCase()) >= 0
@@ -144,7 +148,7 @@
       if (append[0]) return h('section', { className: 'i5-note-page' },
         h('h2', null, L('追加项目笔记', 'Append project note')),
         h('p', { className: 'i5-muted' }, L('记录决定、补充信息与下一步行动。', 'Record decisions, supporting details and next actions.')),
-        h(Iter5Note, { source: rowsData.data[1].notesPath, onSaved: rowsData.retry, onClose: function () { append[1](false) } }))
+        h(Iter5Note, { source: rowsData.data[1].notesPath, sessionId: rowsData.data[1].noteSessionId, onSaved: rowsData.retry, onClose: function () { append[1](false) } }))
       return h('div', { className: 'i5-panel i5-instrument' }, h(Iter5Screws),
         h('div', { className: 'i5-ph' }, h('h2', null, L('记忆文件', 'Memory files')), h('span', { className: 'i5-ph-right i5-num' }, rows.length)),
         h('div', { className: 'i5-toolbar' },
@@ -245,7 +249,7 @@
         var close = root.current.querySelector('[data-i5-close-nav]'); if (close) close.focus()
       }, [menu[0]])
       // 顶部仪器导轨读数窗:会话 / 检索档 / 自动沉淀计数 / 日期,全部为真实宿主数据
-      var railData = useIter5Data(function () { return Promise.allSettled([apiGet(API.state, { ws: currentWs() }), apiGet(API.semanticStatus)]) }, [props.nonce])
+      var railData = useIter5Data(function () { return Promise.allSettled([apiGet(API.state, { ws: currentWs(), sessionId:currentSessionIdClient() }), apiGet(API.semanticStatus)]) }, [props.nonce])
       var railValues = railData.data || []
       var railState = railValues[0] && railValues[0].status === 'fulfilled' ? railValues[0].value : null
       var railSem = railValues[1] && railValues[1].status === 'fulfilled' ? railValues[1].value : null
@@ -258,9 +262,11 @@
       function pageActions() { return h('div', { className: 'i5-page-actions' }, h('button', { 'aria-label': focus[0] ? L('退出专注查看', 'Exit focused view') : L('专注查看', 'Focused view'), 'aria-pressed': focus[0], onClick: function () { focus[1](!focus[0]) } }, h('svg', { width:16,height:16,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:1.5,'aria-hidden':true },h('path',{d:focus[0]?'M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5':'M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5'}))), h('button', { 'aria-label': L('刷新当前页', 'Refresh current page'), onClick: function () { if (root.current.querySelector('[data-i5-dirty="true"]') && !window.confirm(L('刷新会放弃未保存修改，继续？', 'Discard changes and refresh?'))) return; if (page[0] === 'settings') delete iter5SettingsDrafts[iter5Identity() + '|workbench']; refresh[1](refresh[0] + 1) } }, h(Iter5Icon,{name:'timeline'}))) }
       function railReadout(k, v) { return h('div', { className: 'i5-rs', key: k }, h('span', { className: 'i5-rs-k' }, k), h('span', { className: 'i5-rs-v i5-num' }, v)) }
       function exitClassic() {
-        if (root.current && root.current.querySelector('[data-i5-dirty="true"]') && !window.confirm(L('有未保存的修改，确定切回经典？', 'Discard unsaved changes and return to classic?'))) return
+        if (root.current && root.current.querySelector('[data-i5-dirty="true"]') && !window.confirm(L('有未保存的修改，确定切回旧款？', 'Discard unsaved changes and return to the classic new UI?'))) return
         if (page[0] === 'settings') delete iter5SettingsDrafts[iter5Identity() + '|workbench']
-        damSkinSet('classic'); props.onExit()
+        // ★2026-09-30（用户裁定）：三套新皮肤里的「返回」回**旧款**（3.2.5 的新款 UI），
+        //   而不是直接回经典；旧款里的「返回经典皮肤」保持原样。两者语义不同，不得合并。
+        iter5SetStyle('legacy'); props.onExit()
       }
       return h('div', { ref: root, 'data-iter5': '', 'data-native-workbench': '', 'data-i5-style': skinStyle, 'data-page': page[0], 'data-deep': deep ? 'true' : 'false', 'data-focus': String(focus[0]), role: focus[0] ? 'dialog' : undefined, 'aria-modal': focus[0] ? true : undefined, 'aria-label': focus[0] ? L('记忆工作台', 'Memory workbench') : undefined, onKeyDown: function (e) {
         if (!focus[0]) return

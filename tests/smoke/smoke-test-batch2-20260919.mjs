@@ -75,7 +75,11 @@ console.log('\n[③ #70] degraded 不得是单向闩锁；探针/档位必须看
   // 有界自动重试
   ok(/degradedAt/.test(s), '★ 新增 degradedAt（置位时刻）')
   ok(/degradedRetryMs/.test(s), '★★ 有界自动重试（冷却期可配）')
-  ok(/if \(since < retryMs\) throw new Error\(degraded\)/.test(s),
+  // ★2026-10-01 判据更新（移植上游 #159）：重试判定从内联 `if (since < retryMs) throw` 抽成
+  //   `retryEligible()`（供 index.js 的 _jsSemanticRank 有界重试与 status() 共用），语义不变：
+  //   冷却期内仍抛、过期后才允许重试。判据改为「函数存在 + 冷却期内 throw + 过期放行」。
+  ok(/function retryEligible\(\) \{/.test(s) && /Date\.now\(\) - degradedAt >= retryDelayMs\(\)/.test(s)
+    && /if \(!retryEligible\(\)\) throw new Error\(degraded\)/.test(s),
     '★★ 冷却期内仍抛（不每轮狂加载），过期后允许重试')
   ok(/statsRetries\+\+/.test(s), '★ 重试计数可观测')
   // 探针纳入 degraded

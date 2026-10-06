@@ -56,33 +56,48 @@
     function Iter5Calendar(props) {
       var current = new Date(), today = iter5Date(current)
       var month = useState(new Date(current.getFullYear(), current.getMonth(), 1)), selected = useState(today)
-      var draft = useState(null), busy = useState(false), error = useState(''), changed = useState(0)
+      // ★批次 Y（#213 claim2）：日历草稿按会话|工作区作用域共享（calendarDrafts）——换肤/重挂不丢。
+      var calendarKey=memoryDraftIdentity(),calendarAlive=useRef(true)
+      var draftState=useState(function(){return calendarDrafts[calendarKey] || null})
+      var calendarCurrent=useRef(draftState[0])
+      var draft=[draftState[0],function(value){var next=typeof value==='function'?value(calendarCurrent.current):value;calendarCurrent.current=next;if(next)calendarDrafts[calendarKey]=next;else delete calendarDrafts[calendarKey];draftState[1](next)}]
+      var busy = useState(false), error = useState(''), changed = useState(0)
+      useEffect(function(){calendarAlive.current=true;function protect(e){if(!memoryCalendarDirty(calendarDrafts[calendarKey]))return;e.preventDefault();e.returnValue=''}window.addEventListener('beforeunload',protect);return function(){calendarAlive.current=false;window.removeEventListener('beforeunload',protect)}},[calendarKey])
       var response = useIter5Data(function () { return apiGet(API.calendar) }, [props.nonce, changed[0]])
       var entries = response.data && response.data.entries || []
       var identity = iter5Identity()
       var days = entries.filter(function (e) { return e.date === selected[0] }).sort(function (a,b) { return String(a.time || '').localeCompare(String(b.time || '')) })
       var monthPrefix = iter5Date(month[0]).slice(0,7), inMonth = entries.filter(function (e) { return String(e.date).indexOf(monthPrefix) === 0 })
       var counts = response.data ? [entries.filter(function (e) { return !e.done }).length, entries.filter(function (e) { return e.date === today && !e.done }).length, entries.filter(function (e) { return e.done }).length, inMonth.length] : [null,null,null,null]
+      var calendarMessage=useState('')
+      useMemoryOperation('calendar',calendarKey,function(operation,initial){
+        busy[1](operation.status==='pending');error[1](operation.error);calendarMessage[1](operation.result)
+        if(!initial && operation.status==='saved'){
+          if(calendarCurrent.current===operation.submitted){calendarCurrent.current=null;draftState[1](null)}
+          changed[1](function(n){return n+1})
+        }
+      })
       function act(body, close) {
-        if (busy[0]) return
+        if (busy[0] || calendarWrites[calendarKey]) return
+        if(close){submitMemoryOperation('calendar',calendarKey,calendarDrafts[calendarKey],API.calendar,body);return}
         busy[1](true); error[1]('')
         apiPost(API.calendar, body).then(function (d) {
-          if (identity !== iter5Identity()) return
           if (d && (d.ok === false || d.error)) throw Error(d.error || d.reason || L('操作失败', 'Action failed'))
-          if (close) draft[1](null)
-          changed[1](function (n) { return n + 1 })
-        }).catch(function (e) { if (identity === iter5Identity()) error[1](e.message) }).finally(function () { busy[1](false) })
+          if(!calendarAlive.current || identity!==iter5Identity())return
+          changed[1](function(n){return n+1})
+        }).catch(function(e){if(calendarAlive.current && identity===iter5Identity())error[1](e.message)}).finally(function(){if(calendarAlive.current)busy[1](false)})
       }
-      function newEvent() { draft[1]({ title: '', date: selected[0], time: '09:00', quadrant: '重要不紧急', location: '', reminder: '', note: '' }) }
-      function closeDraft() { if (busy[0]) return; if (draft[0] && draft[0].title && !window.confirm(L('放弃尚未添加的日程？', 'Discard this unsaved event?'))) return; draft[1](null) }
+      function newEvent() { draft[1](calendarDrafts[calendarKey] || newCalendarDraft(selected[0])) }
+      function closeDraft() { if (busy[0]) return; if (memoryCalendarDirty(draft[0]) && !window.confirm(L('放弃尚未添加的日程？', 'Discard this unsaved event?'))) return; draft[1](null) }
       function setField(k,v) { draft[1](function (d) { return Object.assign({}, d, (function () { var o={};o[k]=v;return o })()) }) }
       var cells = [], y = month[0].getFullYear(), m = month[0].getMonth()
       for (var i = 0; i < new Date(y,m,1).getDay(); i++) cells.push(null)
       for (var d = 1; d <= new Date(y,m+1,0).getDate(); d++) cells.push(iter5Date(new Date(y,m,d)))
       while (cells.length % 7) cells.push(null)
-      return h('div', { className: 'i5-calendar-view i5-panel i5-instrument' },h(Iter5Screws),
+      return h('div', { className: 'i5-calendar-view i5-panel i5-instrument', 'data-i5-dirty':memoryCalendarDirty(draft[0])?'true':'false' },h(Iter5Screws),
         response.error ? h(Iter5Error, { error: response.error, retry: response.retry }) : null,
         error[0] ? h(Iter5Error, { error: error[0] }) : null,
+        calendarMessage[0] ? h('p',{role:'status'},calendarMessage[0]) : null,
         h('div', { className: 'i5-calendar-columns' },
           h(Iter5Card, { className:'i5-month' }, h('div', { className:'i5-section-heading' }, h('h2',null,y+L(' 年 ',' / ')+(m+1)+L(' 月','')), h('div',{className:'i5-button-group'}, h('button',{'aria-label':L('上个月','Previous month'),onClick:function(){month[1](new Date(y,m-1,1))}},'‹'), h('button',{onClick:function(){month[1](new Date(current.getFullYear(),current.getMonth(),1));selected[1](today)}},L('今天','Today')),h('button',{'aria-label':L('下个月','Next month'),onClick:function(){month[1](new Date(y,m+1,1))}},'›'))),
             h('div',{className:'i5-month-grid',role:'group','aria-label':L('选择日期','Choose date')}, (locale==='zh'?['日','一','二','三','四','五','六']:['Su','Mo','Tu','We','Th','Fr','Sa']).map(function(w){return h('small',{key:w},w)}),cells.map(function(date, idx){
@@ -181,7 +196,15 @@ status[0]?h('p',{className:'i5-muted',role:'status'},status[0]):null,failure[0]?
       var source=sources.find(function(s){return s.id===selected[0]})||sources[0]
       var id=source&&source.id||''
       var detail=useIter5Data(function(){return id?apiGet(API.externalView,{source:id}):Promise.resolve(null)},[id,revision[0]])
-      var identity=iter5Identity(), alive=useRef(true)
+      // ★2026-10-01（用户裁定 B 方案）：全局简报状态 —— 与「外部来源」同页展示。
+      //   语义归位：简报 = 继承其他 Agent 的记忆，属「外部记忆」而非「长会话接续」。
+      //   形态：**一行汇总 + 抽屉展开**（展开后是逐条清单），故取数与渲染都放在本组件内。
+      var briefData=useIter5Data(function(){return apiGet(API.globalBrief, { sessionId: currentSessionIdClient() })},[props.nonce,revision[0]])
+      var briefOpen=useState(false)
+      var brief=briefData.data||null
+      var identity=iter5Identity(), alive=useRef(true), lookup=useRef(0), activeSource=useRef(id)
+      activeSource.current=id
+      useEffect(function(){lookup.current++;search[1]('');error[1]('');busy[1](false)},[id])
       useEffect(function(){return function(){alive.current=false}},[])
       function ok(){return alive.current&&identity===iter5Identity()}
       async function act(task){
@@ -195,10 +218,38 @@ status[0]?h('p',{className:'i5-muted',role:'status'},status[0]):null,failure[0]?
       function removeOne(target){if(!window.confirm(L('从已接入的记忆中移除该来源？原始来源文件不会被删除。','Remove this imported source from memory? Original files are preserved.')+'\n'+source.name))return;act(function(){return apiPost(API.externalRemove,{source:id,target:target})})}
       function findSource(){
         if(!source||busy[0])return
+        var request=++lookup.current, selectedId=id
         busy[1](true);search[1]('');error[1]('')
-        apiPost(API.recall,{query:source.name||source.tool||''}).then(function(r){if(ok())search[1](r.result||L('没有找到相关片段','No matching passages'))}).catch(function(e){if(ok())error[1](e.message)}).finally(function(){if(alive.current)busy[1](false)})
+        apiPost(API.recall,{query:source.name||source.tool||''}).then(function(r){if(ok()&&request===lookup.current&&selectedId===activeSource.current)search[1](r.result||L('没有找到相关片段','No matching passages'))}).catch(function(e){if(ok()&&request===lookup.current&&selectedId===activeSource.current)error[1](e.message)}).finally(function(){if(ok()&&request===lookup.current&&selectedId===activeSource.current)busy[1](false)})
       }
+      var briefChanged=brief&&brief.changed||[]
+      var briefCount=briefChanged.length
+      var briefWhen=brief&&brief.at?new Date(brief.at).toLocaleTimeString():''
+      var briefOn=brief&&brief.enabled===true
+      // 一行汇总：状态 + 计数 + 上次检查时间；点箭头抽屉展开（展开后是逐条清单 = A 形态）
+      var briefRow=h('div',{className:'i5-brief-row','data-dam-brief':''},
+        h('button',{className:'i5-brief-head',type:'button','data-dam-brief-toggle':'','aria-expanded':briefOpen[0]?'true':'false',onClick:function(){briefOpen[1](!briefOpen[0])}},
+          h(Iter5Icon,{name:briefCount?'note':'check'}),
+          h('div',{className:'i5-brief-title'},
+            h('strong',null,L('接续其他 Agent 记忆文档','Inherit other agents\' memory docs')),
+            h('small',null,
+              !briefOn?L('未开启：到设置里打开后才会检测','Off: enable it in settings to start watching')
+              :briefCount?L('检测到 ','Detected ')+briefCount+L(' 处变化',' changes')+(briefWhen?' · '+L('上次检查 ','last check ')+briefWhen:'')
+              :L('暂无变化','No changes yet')+(briefWhen?' · '+L('上次检查 ','last check ')+briefWhen:''))),
+          h('i',{className:'i5-brief-caret','data-open':briefOpen[0]?'true':'false'})),
+        // 详情（抽屉）：逐条列「路径 · 类型 · 来源」；未开启时给去设置的行动提示
+        briefOpen[0]?h('div',{className:'i5-brief-body','data-dam-brief-body':''},
+          !briefOn?h('p',{className:'i5-muted'},L('该功能已被关闭。可在「设置 → 存储与外部记忆 → 接续其他 Agent 记忆文档」重新开启；开启后这里会列出被检测到的文件变化。','This feature is off by default. Enable it under Settings → Storage → Inherit other agents\' memory docs; changes will then be listed here.'))
+          :briefChanged.length?h('ul',{className:'i5-brief-list'},
+            briefChanged.map(function(c,i){return h('li',{key:String(c.path||i),'data-dam-brief-item':''},
+              h('span',{className:'i5-brief-kind','data-kind':String(c.kind||'')},c.kind==='added'?L('新增','added'):c.kind==='removed'?L('移除','removed'):L('变更','changed')),
+              h('code',{className:'i5-brief-path'},String(c.path||'')),
+              c.source?h('span',{className:'i5-brief-src'},String(c.source)):null)}) )
+          :h('p',{className:'i5-muted'},L('自上次检查以来没有变化。','No changes since the last check.')),
+          h('p',{className:'i5-muted i5-brief-foot'},L('只报位置与时间，不摘录内容；模型按需读取绝对路径。','Reports locations and times only, never content; the model reads absolute paths on demand.')))
+        :null)
       return h('div',{className:'i5-external-view'},
+        briefRow,
         h('div',{className:'i5-info-callout'},h(Iter5Icon,{name:'handoff'}),h('div',null,h('h2',null,L('接入外部来源','Connect external sources')),h('p',null,L('查看已发现的工具记忆，按用户级或项目级接入。','Review discovered tool memories and import them to user or project memory.'))),h('button',{onClick:response.retry,disabled:busy[0]},L('重新扫描','Rescan'))),
         response.error?h(Iter5Error,{error:response.error,retry:response.retry}):null,
         message[0]?h('p',{className:'i5-success',role:'status'},message[0]):null,error[0]?h(Iter5Error,{error:error[0]}):null,
@@ -215,18 +266,28 @@ status[0]?h('p',{className:'i5-muted',role:'status'},status[0]):null,failure[0]?
             h('div',{className:'i5-handoff-actions'},source.kind!=='sessions'?h(React.Fragment,null,h('button',{className:'i5-primary-soft',disabled:busy[0],onClick:function(){source.importedUser?removeOne('user'):importOne('user')}},source.importedUser?L('移除用户级接入','Remove user import'):L('接入用户级记忆','Import to user memory')),h('button',{className:'i5-primary',disabled:busy[0],onClick:function(){source.importedNotes?removeOne('project'):importOne('project')}},source.importedNotes?L('移除项目接入','Remove project import'):L('接入项目笔记','Import to project notes'))):null,h('button',{disabled:busy[0],onClick:findSource},L('在记忆中查找','Find in memory'))),search[0]?h('div',{className:'i5-info-callout'},h(Iter5Document,{text:search[0]})):null):null)
           :h(Iter5Empty,{title:L('尚未发现外部记忆','No external memory discovered'),text:L('安装或使用支持的工具后，重新扫描即可查看可用来源。','Rescan after using a supported tool to discover its memory.')}))
     }
-    var iter5NoteDrafts = Object.create(null)
+    var iter5NoteDrafts = memoryNoteDrafts
     function Iter5Note(props) {
-      var identity=iter5Identity(),draftKey=props.persistDraft ? identity + '|' + props.persistDraft : ''
+      // ★批次 Y：draftKey=memoryDraftIdentity()（会话|工作区作用域，跨皮肤共享）；
+      //   提交经 submitMemoryOperation（防重发 + 完成事件经 useMemoryOperation 回灌）；
+      //   载荷带 sessionId + expectedNotesPath（服务端 X2 必填；props.sessionId 优先，缺省回落当前值）。
+      var identity=iter5Identity(),draftKey=memoryDraftIdentity()
       var draft=useState(function(){return draftKey && iter5NoteDrafts[draftKey] || ''}),busy=useState(false),error=useState(''),message=useState('')
       var alive=useRef(true)
       useEffect(function(){alive.current=true;function protect(e){if(!draft[0].trim())return;e.preventDefault();e.returnValue=''}window.addEventListener('beforeunload',protect);return function(){alive.current=false;window.removeEventListener('beforeunload',protect)}},[draft[0]])
+      useMemoryOperation('note',draftKey,function(operation,initial){
+        busy[1](operation.status==='pending');error[1](operation.error);message[1](operation.result)
+        if(!initial && operation.status==='saved'){
+          draft[1](function(current){return current===operation.submitted?'':current});if(props.onSaved)props.onSaved()
+        }
+      })
       function save(e){
-        e.preventDefault();if(!draft[0].trim()||busy[0])return
-        busy[1](true);error[1]('');message[1]('')
-        apiPost(API.note,{content:draft[0].trim()}).then(function(r){if(!alive.current||identity!==iter5Identity())return;if(r&&(r.ok===false||r.error))throw Error(r.error||r.reason);if(draftKey)delete iter5NoteDrafts[draftKey];draft[1]('');message[1](r.result||L('已追加到项目笔记','Appended to project notes'));if(props.onSaved)props.onSaved()}).catch(function(e){if(alive.current&&identity===iter5Identity())error[1](e.message)}).finally(function(){if(alive.current)busy[1](false)})
+        e.preventDefault();if(!draft[0].trim()||busy[0]||memoryNoteWrites[draftKey])return
+        var sid = currentSessionIdClient()
+        if(!sid || !props.source){error[1](L('会话或目标已变化，请刷新笔记表单。','Session or destination changed. Reload the note form.'));return}
+        submitMemoryOperation('note',draftKey,draft[0],API.note,{content:draft[0].trim(),sessionId:sid,expectedNotesPath:props.source})
       }
-      return h('form',{onSubmit:save,'data-i5-dirty':draft[0].trim()?'true':'false',className:'i5-note-form'},props.source?h('div',{className:'i5-note-destination'},h(Iter5Icon,{name:'note'}),h('div',null,h('strong',null,L('项目笔记','Project notes')),h('small',null,props.source))):null,h('label',{className:'i5-form-field'},L('值得记住的内容','Something worth remembering'),h('textarea',{'aria-label':L('追加项目笔记','Append project note'),rows:5,value:draft[0],disabled:busy[0],placeholder:L('写下决定、发现，或下一次需要记住的细节…','A decision, a discovery, or a detail for next time…'),onChange:function(e){draft[1](e.target.value);if(draftKey){if(e.target.value)iter5NoteDrafts[draftKey]=e.target.value;else delete iter5NoteDrafts[draftKey]}}})),h('div',{className:'i5-toolbar i5-note-footer'},props.onClose?h('button',{type:'button',disabled:busy[0],onClick:function(){if(draft[0].trim()&&!window.confirm(L('放弃尚未保存的笔记？','Discard this unsaved note?')))return;props.onClose()}},L('取消','Cancel')):null,h('button',{type:'submit',className:'i5-primary',disabled:busy[0]||!draft[0].trim()},busy[0]?L('保存中…','Saving…'):L('追加','Append')),h('small',null,L('以追加方式保存，不覆盖已有笔记。','Appends without overwriting existing notes.'))),message[0]?h('p',{className:'i5-success',role:'status'},message[0]):null,error[0]?h(Iter5Error,{error:error[0]}):null)
+      return h('form',{onSubmit:save,'data-i5-dirty':draft[0].trim()?'true':'false',className:'i5-note-form'},props.source?h('div',{className:'i5-note-destination'},h(Iter5Icon,{name:'note'}),h('div',null,h('strong',null,L('项目笔记','Project notes')),h('small',null,props.source))):null,h('label',{className:'i5-form-field'},L('值得记住的内容','Something worth remembering'),h('textarea',{'aria-label':L('追加项目笔记','Append project note'),rows:5,value:draft[0],placeholder:L('写下决定、发现，或下一次需要记住的细节…','A decision, a discovery, or a detail for next time…'),onChange:function(e){draft[1](e.target.value);if(draftKey){if(e.target.value)iter5NoteDrafts[draftKey]=e.target.value;else delete iter5NoteDrafts[draftKey]}}})),h('div',{className:'i5-toolbar i5-note-footer'},props.onClose?h('button',{type:'button',disabled:busy[0],onClick:function(){if(draft[0].trim()&&!window.confirm(L('放弃尚未保存的笔记？','Discard this unsaved note?')))return;delete memoryNoteDrafts[draftKey];draft[1]('');props.onClose()}},L('取消','Cancel')):null,h('button',{type:'submit',className:'i5-primary',disabled:busy[0]||!draft[0].trim()},busy[0]?L('保存中…','Saving…'):L('追加','Append')),h('small',null,L('以追加方式保存，不覆盖已有笔记。','Appends without overwriting existing notes.'))),message[0]?h('p',{className:'i5-success',role:'status'},message[0]):null,error[0]?h(Iter5Error,{error:error[0]}):null)
     }
     function Iter5History(props) {
       var busy=useState(false),error=useState(''),message=useState(''),revision=useState(0)

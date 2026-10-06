@@ -26,18 +26,30 @@
 
 export const GENERATED_BEGIN = '    // ITER5-GENERATED:BEGIN'
 export const GENERATED_END = '    // ITER5-GENERATED:END'
+// ★2026-09-30 双皮肤块（用户裁定：旧款为默认 + 三套变体经下拉选择）：
+//   生成区现有**两块** —— legacy 块（3.2.5 的「新款」皮肤，整体包 IIFE）
+//   与当前块（仪器/编辑/活水）。两者都是皮肤源码，都不属于经典档契约的作用域 ⇒ 必须都剥。
+//   ⚠️ legacy 块内部保留了它自己原有的 `// ITER5-GENERATED:BEGIN` 字面量（那是它 3.2.5 的
+//   快照内容，故意原样保留）；故剥离顺序**必须先 legacy 再当前**，否则第一条正则会把 legacy
+//   的内层标记当成起点、切掉中间一大段真实经典档代码。
+export const LEGACY_BEGIN = '    // ===== ITER5-LEGACY-GENERATED:BEGIN ====='
+export const LEGACY_END = '    // ===== ITER5-LEGACY-GENERATED:END ====='
 
-/** 生成区及其前后换行的剥离正则（CRLF/LF 都吃；区间缺失时原样返回）。 */
+/** legacy 块（含外层标记行与相邻换行）的剥离正则。 */
+const LEGACY_REGION_RE = /[ \t]*\/\/ ===== ITER5-LEGACY-GENERATED:BEGIN =====[\s\S]*?\/\/ ===== ITER5-LEGACY-GENERATED:END =====\r?\n?/
+/** 当前块（仪器/编辑/活水）的剥离正则。 */
 const REGION_RE = /[ \t]*\/\/ ITER5-GENERATED:BEGIN[\s\S]*?\/\/ ITER5-GENERATED:END\r?\n?/
 
 /**
- * 去掉 `lib/client.js` 的 iter5 生成区，返回**经典档**源码。
+ * 去掉 `lib/client.js` 的 iter5 生成区（**两块都剥**），返回**经典档**源码。
  * 作用域：只服务「断言经典档契约」的守卫；皮肤自身的验收不要用它。
  * @param {string} source client.js 全文
  * @returns {string} 剥离生成区后的源码（无生成区时原样返回）
  */
 export function stripGeneratedSkin(source) {
   const text = String(source || '')
-  if (!text.includes(GENERATED_BEGIN)) return text
-  return text.replace(REGION_RE, '')
+  let out = text
+  if (out.includes(LEGACY_BEGIN)) out = out.replace(LEGACY_REGION_RE, '')
+  if (out.includes(GENERATED_BEGIN)) out = out.replace(REGION_RE, '')
+  return out
 }

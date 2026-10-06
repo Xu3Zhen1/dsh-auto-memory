@@ -162,12 +162,12 @@ for (const g of ['DamDonut', 'DamBars', 'DamSpark', 'DamHeat', 'DamStat']) {
 ok(cnt(CL, "statsTab: '统计'") === 1 && cnt(CL, "statsTab: 'Stats'") === 1, 'S4g i18n 中英双语齐全')
 // ★用户要求：三条通路分开呈现、看得懂、有图表
 // ★S4g2 判据演进（#149，2026-09-30）：旧判据锁「data.channels 出现 1 次」——那正是 bug 本身
-//   （宿主返回 {enabled, stats: snapshot()}，channels 嵌在 stats 之下）。
+//   （宿主返回 {enabled, stats: snapshot()}，channels 嵌在 stats 之下，直读 data.channels 恒 {}）。
 //   现全文件不再有旧扁平直读；StatsTab 与新皮肤 Iter5Stats 均经解包后的 st.* 读（同一 bug 的两个现场）。
 ok(cnt(CL, 'data.channels') === 0, 'S4g2 旧扁平直读 data.channels 已彻底移除（演进自「出现1次」）')
 {
-  const i5s = CL.slice(CL.indexOf('function Iter5Stats() {'), CL.indexOf('// ITER5-GENERATED:END'))
-  ok(!i5s.includes('data.channels') && i5s.includes('st.channels'), 'S4g2b 新皮肤 Iter5Stats 同步解包 stats')
+  const i5s = CL.slice(CL.indexOf('function Iter5Stats() {'), CL.indexOf('function Iter5Stats() {') + 4000)
+  ok(!i5s.includes('data.channels') && i5s.includes('st.channels'), 'S4g2b 新皮肤 Iter5Stats 同步解包 stats（新组件未复制旧有的恒 0 读法）')
 } 
 {
   // ★S4g3 判据修正（2026-09-22 实测）：全局 `data.stats` 有 2 处命中，但它们在 **DebugCenter 的

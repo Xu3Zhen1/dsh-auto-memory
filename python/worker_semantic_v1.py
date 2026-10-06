@@ -113,7 +113,10 @@ class LexicalBM25:
 # ---- M7-6 activation policy (default: shadow calibration only) ----
 ACTIVATION_POLICY_VERSION = 'm7_semantic_threshold_pre_v1'
 DEFAULT_ACTIVATION_POLICY = {
-    'mode': 'shadow',            # 'shadow' = calibrate/log only; 'active' = emit frames
+    # ⚠️ H 批（2026-09-30）：本策略块整体属**校准期**工件，仅供调参实验，不可接入正式用户线。
+    #    其 'mode' 的 active 值**已不再是发射开关**（v1 车道发射权已退休）。
+    #    正式用户线投递看 activationEmitMode（fv2 emit bridge），与这里无关。
+    'mode': 'shadow',            # 退休后恒为 shadow（active 不再放行任何帧）
     'tOn': 0.62, 'tOff': 0.52,   # dual threshold, T_on > T_off (hysteresis)
     'cooldownObs': 3,            # observations to skip after an emission
     'maxCandidates': 8,
@@ -953,10 +956,23 @@ class SemanticWorker(base.Worker):
                 else:
                     row['activationId'] = act['activationId']
                     row['level'] = act['level']
-                    if self.activation_policy['mode'] == 'active':
-                        frames.append(self._frame(req, 'activation_request',
-                                                  {'activation': act},
-                                                  fid_prefix='act_'))
+                    # ===== H 批 · v1 车道正式退休（2026-09-30 用户裁定）=====
+                    # 【定位｜仅调参实验 · 不可接入正式用户线】
+                    # 本车道（M7-6 双阈值）是**校准期**机制：其策略工件（tOn/tOff/cooldownObs）append-only、
+                    # configHash 冻结，决定了它必须与用户运营面隔离。
+                    #
+                    # 发射权**已退休**：
+                    #   · 正式用户线的发帧**唯一入口** = fv2 emit bridge（受 activationEmitMode 门控）；
+                    #   · 本车道继续跑判定并**照写 shadow 行**（activation-shadow.jsonl），
+                    #     供双阈值标定 / 离线评测使用 —— 这是它唯一被保留的用途。
+                    #
+                    # 退休理由：本车道读 activationPolicy.mode，而该键在用户面**零写入点**
+                    #   （设置页 / 新手向导 / semantic-emit 端点三处全只写 activationEmitMode）。
+                    #   两把钥匙 = 两条用户无法自洽控制的投递路径；少一把钥匙，就少一条「用户开了却不生效」的歧路。
+                    #
+                    # ⚠️ 禁止复活：不得在此处重新 append activation_request 帧。
+                    #    该不变量由 tests/smoke/smoke-test-h1-v1-lane-retired.mjs 真执行守卫。
+                    pass  # 退休：不再发帧（此前为 activationPolicy.mode / activationEmitMode 双路放行）
             self._append_activation_shadow(row)
         # ---- feature v2 two-lane decision (shadow rows always; wire emits
         # gated by embedding-config activationEmitMode, default shadow) ----
@@ -964,6 +980,25 @@ class SemanticWorker(base.Worker):
             self._fv2_shadow_decide(req, p, candidates or [], frames)
         except Exception as _fv2_err:
             base.diag('fv2-callsite-error: ' + str(_fv2_err)[:300])
+        # 2026-09-30 G 批 · 发射闸单钥匙化：单钥匙化后 v1(M7-6) 与 fv2 两车道可能对**同一 observation** 各产一帧；
+        # 两者 activationId 同源（均走 _build_activation，只由 obs 派生）⇒ 同 id 双帧。
+        # 不靠下游收件箱的「重复」门兜底：此处按 activationId **保序去重**（保留首帧）。
+        try:
+            _seen_aid, _uniq = set(), []
+            for _f in frames:
+                _aid = ''
+                if isinstance(_f, dict) and _f.get('type') == 'activation_request':
+                    _pl = _f.get('payload') or {}
+                    _ac = _pl.get('activation') if isinstance(_pl, dict) else None
+                    _aid = str((_ac or {}).get('activationId') or '') if isinstance(_ac, dict) else ''
+                    if _aid and _aid in _seen_aid:
+                        continue
+                    if _aid:
+                        _seen_aid.add(_aid)
+                _uniq.append(_f)
+            frames = _uniq
+        except Exception as _dd_err:
+            base.diag('activation-dedup-error: ' + str(_dd_err)[:200])
         return frames
 
     def handle_frame(self, req):

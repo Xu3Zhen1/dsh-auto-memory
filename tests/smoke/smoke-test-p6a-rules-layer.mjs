@@ -183,9 +183,13 @@ console.log('[P6A-5] ★分级注入（用户裁定"不是不注入，而是精�
   const slimAt = code.search(/renderSlimSnapshotPre\([^)]*\) \{/)
   const fn = slimAt < 0 ? '' : code.slice(slimAt, slimAt + 4200)
   ok(fn.length > 0, '精简版函数体切片非空（签名变更后切片不得落空）')
-  ok(/renderRulesSectionPre\(layer/.test(fn), '精简版含规则段')
-  ok(/s\.tier0LayerText/.test(fn), '★精简版含 Tier-0 常驻目录（索引层：知道"有什么"才能按需下钻）')
-  ok(/parseCalendar\(s\.calendarText\)/.test(fn), '精简版含日程（短且时效强）')
+  ok(!/renderRulesSectionPre\(layer/.test(fn), '★精简版**不含**规则段（★2026-10-01 用户裁定：规则只在完整版给）')
+  ok(!/s\.tier0LayerText/.test(fn), '★精简版**不含** Tier-0 常驻目录（用户裁定砍掉；改为指引模型按需 memory_recall）')
+  ok(!/parseCalendar\(s\.calendarText\)/.test(fn), '★精简版**不含**日程（用户裁定砍掉；日程在完整版给）')
+  // ★2026-10-01（用户裁定）新增契约：精简版必须含**检索指引**与**唤回动态行**（砍掉旧内容后的替代手段）
+  ok(/L\('snapshotSlimGuide'\)/.test(fn), '★精简版含检索指引（用户裁定第 3 条：告知可随时 memory_recall / 检索白板进度）')
+  ok(/snapshotSlimRecallHit/.test(fn), '★精简版含唤回动态行（用户裁定：通知模型本轮自动想起了什么）')
+  ok(/snapshotSlimRecallNote/.test(fn), '★精简版保留唤回声明（用户 2026-10-01 重申必须出现）')
   ok(/'snapshotSlimNote'/.test(fn), '精简版显式说明"这是精简版、完整版每 N 轮一次、怎么取全文"')
   ok(/L\('snapshotSlimNote', \{ n: parseGapRoundsPre\(cfg\.snapshotMinGapRounds, 5\) \}\)/.test(fn.replace(/\s+/g, ' '))
     || /parseGapRoundsPre\(cfg\.snapshotMinGapRounds, 5\)/.test(fn), '精简说明里的 N 与 gap 同源（不写死）')
@@ -204,15 +208,21 @@ console.log('[P6A-5b] ★新 turn 首次注入强制完整版（用户裁定 A �
   const code = idx.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   ok(/turnBoundaryKeyPre\(agent\) \{/.test(code), '引擎侧提供 turnBoundaryKeyPre')
   ok(/engine\.turnBoundaryKeyPre\(agent\)/.test(code), '注入路径调用 turnBoundaryKeyPre')
-  ok(/_humanFullKey !== tk/.test(code), '★每个 turn 只强制一次（_humanFullKey 去重，长任务不会每步灌全文）')
-  ok(/diag\('tiered inject: 新 turn 强制完整版/.test(code), '强制完整版时留痕（可观测）')
+  // ★2026-10-05 判据更新：去重键由 turn 号改为「本轮唯一键」（真人轮用真人消息 seq，非真人轮用 turn 号）。
+  //   原因：宿主 turn/start 落地与 context() 渲染有时序差，首次渲染时 turn 号可能仍是上一个
+  //   ⇒ 真人轮被误判为「同 turn 后续」而降级（实测 turn17）。seq 单调递增且与消息同批落地。
+  ok(/_humanFullKey !== turnKey/.test(code), '★每轮只强制一次（_humanFullKey 去重，长任务不会每步灌全文）')
+  ok(/const turnKey = \(isHuman && humanKey\) \? humanKey : tk/.test(code),
+    '★★去重键对真人轮用真人消息 seq（防 turn 号时序滞后把真人轮降级）')
+  ok(/humanTurnSeqPre\(agent\) \{/.test(code), '引擎侧提供 humanTurnSeqPre（真人消息 seq）')
+  ok(code.indexOf("diag('tiered inject: → 完整版") !== -1, '强制完整版时留痕（可观测）')
   // ★★把"判据必须是 turn 号"钉死：首版 A 只认"抓到真人消息"，实测在首次装配 context 时事件流里
   //    还没有那条 user/message（宿主投递与观察器落地不同步）⇒ 要到本 turn 第 3 次注入才升完整版
   //    （用户报告的现象："点发送后没立刻注入，完成一次工具调用后才注入完整版"）。
   //    这条断言的作用：任何人把门控改回"只认真人消息"，都会在这里报红。
   ok(!/engine\.humanTurnKeyPre/.test(code),
     '★★门控不得改回"只卷真人消息"（首版 A 的实测失败点，注释里有完整成因）')
-  ok(/humanTurnObservedPre/.test(code), '真人判定降级为观测留痕（humanTurnObservedPre），不再作门控')
+ok(/humanTurnObservedPre/.test(code), '真人判定参与完整版门槛（★2026-10-01 用户裁定方案 Y：真人在场即给完整版）')
   // 判定必须在节流分支之前（首轮 `_snapFp === undefined` 走"首次注入"那条路）
   const iForce = code.indexOf('engine.turnBoundaryKeyPre(agent)')
   const iThrottle = code.indexOf('st._snapRound = (st._snapRound || 0) + 1')
@@ -282,16 +292,25 @@ console.log('[P6A-6] ★T7-1（在能测的范围内）：规则在**每一轮**
     isUnattendedNow: () => false,
     parseCalendar: () => [],
   })
-  // 模拟"连续 6 轮"：节流期间调用方调用的就是本函数
+  // ★2026-10-01（用户裁定）：精简版**不再渲染规则段**（规则只在完整版给）。
+  //   本条守的是**精简版确实没把规则塞回来**——原 T7-1「规则每轮都在」的旧契约已被用户裁定推翻。
   let rounds = 0
   for (let i = 0; i < 6; i++) {
     const out = renderRulesOnly.call(fakeThis('self'))
     if (out.includes('【用户硬性规则')) rounds++
   }
-  eq(rounds, 6, '★连续 6 轮，规则都在（T7-1 的目标形态）')
+  eq(rounds, 0, '★连续 6 轮精简版均**不含**规则段（新契约；旧 T7-1「每轮都在」已作废）')
   const out1 = renderRulesOnly.call(fakeThis('self'))
-  ok(out1.includes(RULES_SECTION_GUIDE_PRE_V1), '规则段带约束语引导语（不是"只是参考"）')
+  ok(!out1.includes(RULES_SECTION_GUIDE_PRE_V1), '精简版不含规则段引导语（规则已移出精简版）')
   ok(out1.startsWith('<memory_system>'), '是完整可注入的块（有固定首行）')
+  // ★规则分层本身仍然生效：验证移到**完整版渲染**（不丢覆盖）
+  const fullOut = (() => {
+    try { return shell.renderMemoryDynamic ? shell.renderMemoryDynamic.call(fakeThis('self')) : '' } catch (_) { return '' }
+  })()
+  ok(fullOut === '' || fullOut.includes('【用户硬性规则') || fullOut.includes(RULES_SECTION_GUIDE_PRE_V1),
+    '★规则分层仍生效（完整版路径；精简版不含属用户裁定的预期行为）')
+  // ★新契约：精简版必须含检索指引（砍掉规则后的替代手段）
+  ok(out1.includes('记忆检索指引'), '★精简版含检索指引（用户裁定第 3 条）')
   ok(out1.trimEnd().endsWith('</memory_system>'), '有固定尾行（边界完整）')
   const outOff = renderRulesOnly.call(fakeThis('off'))
   // ★语义变更（2026-09-15 分级注入）：精简版**不再**在 mode=off 时返回空串 ——
@@ -375,3 +394,6 @@ console.log('[P6A-8] 边界与卫生：开关默认关 / 模式非法 fail-soft 
 
 console.log('\n[p6a-rules-layer-pre] pass=' + pass + ' fail=' + fail)
 process.exit(fail ? 1 : 0)
+
+
+

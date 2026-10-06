@@ -82,7 +82,7 @@ function extractMethodFromLine(src, fromLine) {
   return ''
 }
 
-const SLIM_DEF = defLineOf(/(^|\n)\s*renderSlimSnapshotPre\s*\(\s*wsHint\s*\)\s*\{/)
+const SLIM_DEF = defLineOf(/(^|\n)\s*renderSlimSnapshotPre\s*\(\s*wsHint[^)]*\s*\)\s*\{/)
 const FULL_DEF = defLineOf(/(^|\n)\s*renderMemoryDynamic\s*\(\s*context\s*\)\s*\{/)
 // 方法简写形态：(wsHint) { ... } —— 含形参，可直接写进对象字面量
 const SLIM_METHOD = SLIM_DEF ? extractMethodFromLine(SRC, SLIM_DEF) : ''
@@ -110,7 +110,7 @@ const CFG = {
 function runSlim(state, hint) {
   const fn = new Function(
     'parseGap', 'neut', 'LAYERS_', 'today', 'extractRules', 'renderRules',
-    'truncBounded', 'stripSensitive', 'sanitize', 'st', 'cfg', 'hint',
+    'truncBounded', 'stripSensitive', 'sanitize', 'st', 'cfg', 'hint', 'stateFor', 'agent',
     `const parseGapRoundsPre = parseGap;
      const neutralizePromptTemplateVars = neut;
      const DEFAULT_PROMPT_LAYERS = LAYERS_;
@@ -121,18 +121,20 @@ function runSlim(state, hint) {
      const stripSensitiveSections = stripSensitive;
      const sanitizeForInjection = sanitize;
      const self = {
+       stateFor: stateFor,
        renderSlimSnapshotPre${SLIM_METHOD},
        state: st, config: cfg,
        memToday: () => '2026-09-15',
        isUnattendedNow: () => false,
        parseCalendar: () => [],
      };
-     return self.renderSlimSnapshotPre(hint)`)
+     return self.renderSlimSnapshotPre(hint, agent)`
+  )
   return fn(
     (v) => Number(v) || 5, (t) => t, LAYERS, () => '2026-09-15',
     () => ({ text: '' }), () => ({ text: '' }),
     (t) => String(t || ''), (t) => String(t || ''), (t) => String(t || ''),
-    state, CFG, hint,
+    state, CFG, hint, (ag) => state, undefined,
   )
 }
 const BASE = { ws: '', loadedAt: 0, calendarText: '' }
@@ -143,10 +145,10 @@ console.log('[ws-hint] S0 源码守卫')
   ok(FULL_DEF > 0, 'renderMemoryDynamic(context) 定义行已定位（第 ' + FULL_DEF + ' 行）')
   ok(SLIM_METHOD.length > 300, '精简版方法体抽取成功（' + SLIM_METHOD.length + ' 字符）')
   ok(FULL_BODY.length > 300, '完整版方法体抽取成功（' + FULL_BODY.length + ' 字符）')
-  ok(/^\s*\(\s*wsHint\s*\)/.test(SLIM_METHOD),
+  ok(/^\s*\(\s*wsHint\b/.test(SLIM_METHOD),
     '★抽出的方法简写含形参 wsHint（否则沙箱内会 ReferenceError 并被 catch 吞成空串）')
 
-  ok(/renderSlimSnapshotPre\s*\(\s*wsHint\s*\)/.test(SRC),
+  ok(/renderSlimSnapshotPre\s*\(\s*wsHint\b/.test(SRC),
     '★签名已接受 wsHint（防被改回无参）')
   ok(/const\s+wsEff\s*=\s*s\.ws\s*\|\|\s*wsHint\s*\|\|\s*''/.test(SLIM_METHOD),
     "★口径 = s.ws || wsHint || ''（state 优先，首轮回退 hint）")
@@ -158,7 +160,7 @@ console.log('[ws-hint] S0 源码守卫')
   // 注入回调侧接线
   ok(/wsHintPre\s*=\s*\(agent\.session\s*&&\s*agent\.session\.header\s*&&\s*agent\.session\.header\.cwd\)/.test(SRC),
     '★回调从 session.header.cwd 取 hint（与 resolvePaths:1735 同源）')
-  ok(/renderSlimSnapshotPre\(wsHintPre\)/.test(SRC),
+  ok(/renderSlimSnapshotPre\(wsHintPre\b/.test(SRC),
     '★精简版调用点已传入 hint（防接线被摘）')
 
   // ---- C：pre-step 的 await refresh 必须包进 withAgent ----
@@ -235,3 +237,9 @@ console.log('[ws-hint] S2 边界')
 
 console.log('[ws-hint] ' + pass + '/' + (pass + fail) + ' assertions passed')
 process.exit(fail === 0 ? 0 : 1)
+
+
+
+
+
+

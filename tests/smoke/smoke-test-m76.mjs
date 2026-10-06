@@ -1,6 +1,9 @@
 // M7-6 Semantic Activation 测试(任务集 §十,worker_semantic_v1):
 // 双阈值 suppress/prefetch/emit + T_on>T_off 滞回 + cooldown;shadow 校准默认,
-// active 模式发 activation_request 帧——逐字段过现有 M6 validateActivationRequestPre;
+// ★2026-09-30 H 批改判（用户裁定：v1 车道正式退休、仅调参实验、不可接入正式用户线）：
+//   本文件原第 3 行断言「active 模式发 activation_request 帧」。发射权退休后 Q2/Q4 改为经
+//   **shadow 判定序列**观察同一台状态机；帧字段契约的覆盖移交 fv2（m710 / h1 套件）。
+//   状态机本身的 suppress/prefetch/emit/cooldown 语义未变（Q1/Q3 原样保留）。
 // provenance 从 corpus 复制;close_session 清 per-session 状态;未知 miv fail closed。
 // hash-pre-v1 确定性 provider,零联网零模型。
 import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
@@ -106,8 +109,11 @@ console.log('[Q1] shadow 模式默认:低分 suppress/高分 emit 决策落日�
   await c.dispose('q1'); rmSync(home, { recursive: true, force: true })
 }
 
-console.log('[Q2] active 模式:activation 帧逐字段过 M6 validateActivationRequestPre')
+console.log('[Q2] v1 车道已退休:active 模式也零帧;决策仍落 shadow 行')
 {
+  // H 批改判：原断言「active 发帧并逐字段过 M6 校验」作废。
+  // 帧字段契约现由 fv2 覆盖：m710（policyVersion/level/ttl/candidates provenance）+ h1（退休不连坐）。
+  // 本用例收窄为守住**退休后仍须成立**的部分：决策照记、activationId/features 照落 shadow 行。
   const home = mkdtempSync(path.join(tmpdir(), 'm76-q2-'))
   const c = mkClient(home, mkEmbConfig(home, { mode: 'active', tOn: 0.7, tOff: 0.4, cooldownObs: 2 }))
   const recs = records()
@@ -118,28 +124,14 @@ console.log('[Q2] active 模式:activation 帧逐字段过 M6 validateActivation
   const r = await c.request('context_push', push('obs_pre_' + hex32('q2a'), miv, GOLD_TEXT, 1))
   ok(r.ok && r.frame.payload.accepted === true, 'ack 不受激活影响')
   for (let i = 0; i < 20 && got.length < 1; i++) await sleep(50)
-  ok(got.length === 1, '收到 1 个 activation 帧')
-  const act = got[0]
-  const v = INBOX.validateActivationRequestPre(act)
-  ok(v.ok === true, '过 validateActivationRequestPre(' + (v.ok ? '' : v.reason) + ')')
-  eq(act.observationId, 'obs_pre_' + hex32('q2a'), 'observationId=envelope 原值')
-  eq(act.memoryIndexVersion, miv, 'miv=envelope 原值')
-  eq(act.sessionId, 'sess-76', 'sessionId 逐字复制')
-  eq(act.threshold.policyVersion, 'm7_semantic_threshold_pre_v1', 'threshold.policyVersion')
-  ok(act.threshold.score >= 0.7 && act.threshold.threshold === 0.7, 'score≥T_on 且 threshold=T_on')
-  ok(typeof act.level === 'string' && ['index', 'hint', 'excerpt', 'checklist', 'resource', 'full'].includes(act.level), 'level 枚举合法')
-  ok(act.candidates.length >= 1 && act.candidates.length <= 8, '候选 1..8')
-  const cand = act.candidates[0]
-  eq({ memoryId: cand.memoryId, anchorId: cand.anchorId, scope: cand.scope, sourceRef: cand.sourceRef, sourceEpoch: cand.sourceEpoch, sourceVersion: cand.sourceVersion, fileDigest: cand.fileDigest, recordDigest: cand.recordDigest },
-     { memoryId: recs[0].memoryId, anchorId: recs[0].anchorId, scope: recs[0].scope, sourceRef: recs[0].sourceRef, sourceEpoch: recs[0].sourceEpoch, sourceVersion: recs[0].sourceVersion, fileDigest: recs[0].fileDigest, recordDigest: recs[0].recordDigest },
-     'top1 provenance 七字段逐字复制 corpus')
-  ok(typeof cand.score === 'number' && cand.score >= 0 && cand.score <= 1, 'candidate.score∈[0,1]')
-  ok(!cand.excerpt || Buffer.byteLength(cand.excerpt, 'utf8') <= 480, 'excerpt≤480B')
-  ok(act.ttlSteps >= 2 && act.ttlSteps <= 10, 'ttlSteps 2..10(避开=1 立即过期雷区)')
-  ok(act.expiresAt >= act.createdAt, 'expiresAt≥createdAt')
+  ok(got.length === 0, 'v1 退休:active 模式零 activation 帧(实收 ' + got.length + ')')
+  const rows = actShadowRows(home)
+  eq(rows.length, 1, 'v1 决策仍落 shadow 行(退休的是发射权,不是观测)')
+  eq(rows[0].decision, 'emit', '高分观测仍判定 emit')
+  ok(rows[0].activationId && rows[0].activationId.startsWith('act_pre_'), 'shadow 行仍带确定性 activationId')
+  ok(rows[0].features && typeof rows[0].features.denseTop === 'number' && rows[0].features.denseTop > 0.9, '特征分组仍落日志(denseTop>0.9)')
   await c.dispose('q2'); rmSync(home, { recursive: true, force: true })
 }
-
 console.log('[Q3] 滞回+cooldown:emit→cooldown→(冷却后)高分再 emit;中分 prefetch;低分回 suppress')
 {
   const home = mkdtempSync(path.join(tmpdir(), 'm76-q3-'))
@@ -165,8 +157,9 @@ console.log('[Q3] 滞回+cooldown:emit→cooldown→(冷却后)高分再 emit;�
   await c.dispose('q3'); rmSync(home, { recursive: true, force: true })
 }
 
-console.log('[Q4] close_session 清会话状态;未知 miv fail closed')
+console.log('[Q4] close_session 清会话状态;未知 miv fail closed(经 shadow 判定观察)')
 {
+  // H 批：退休后无帧可数，改用 **shadow 判定序列** 观察同一台会话状态机（行为未变）。
   const home = mkdtempSync(path.join(tmpdir(), 'm76-q4-'))
   const c = mkClient(home, mkEmbConfig(home, { mode: 'active', tOn: 0.7, tOff: 0.4, cooldownObs: 5 }))
   const recs = records()
@@ -175,22 +168,23 @@ console.log('[Q4] close_session 清会话状态;未知 miv fail closed')
   const got = []
   c.onActivation((evt) => got.push(evt.activation))
   await c.request('context_push', push('obs_pre_' + hex32('q4a'), miv, GOLD_TEXT, 1))
-  for (let i = 0; i < 20 && got.length < 1; i++) await sleep(50)
-  ok(got.length === 1, '首个激活到达')
+  await sleep(300)
   await c.request('context_push', push('obs_pre_' + hex32('q4b'), miv, GOLD_TEXT, 2))
   await sleep(300)
-  eq(got.length, 1, 'cooldown=5 内第二观测不再发')
   await c.notify('close_session', { sessionId: 'sess-76' })
   await sleep(200)
   await c.request('context_push', push('obs_pre_' + hex32('q4c'), miv, GOLD_TEXT, 3))
-  for (let i = 0; i < 20 && got.length < 2; i++) await sleep(50)
-  ok(got.length === 2, 'close_session 清状态后同会话重新可 emit')
+  await sleep(300)
+  const dec = actShadowRows(home).map((x) => x.decision)
+  eq(dec[0], 'emit', '首个激活判定 emit')
+  eq(dec[1], 'cooldown', 'cooldown=5 内第二观测判 cooldown')
+  eq(dec[2], 'emit', 'close_session 清状态后同会话重新可 emit')
+  eq(got.length, 0, '全程零 activation 帧(v1 已退休)')
   await c.request('context_push', push('obs_pre_' + hex32('q4d'), 'idx_pre_' + hex32('ghost'), GOLD_TEXT, 4))
   await sleep(300)
-  eq(got.length, 2, '未知 miv → 零候选零激活(fail closed)')
+  eq(actShadowRows(home).length, 3, '未知 miv → 零候选 → 不落行(fail closed)')
   await c.dispose('q4'); rmSync(home, { recursive: true, force: true })
 }
-
 console.log('[Q5] 无 provider/无 corpus:激活路径安全静默')
 {
   const home = mkdtempSync(path.join(tmpdir(), 'm76-q5-'))
