@@ -53,10 +53,11 @@ function makeEngine(opts = {}) {
     hasReliableSessionIdentity(agent) { return !!(agent && agent.session && agent.session.id) },
     isContinuedSession() { return !!(opts.continued) },
   }
-  const obj = new Function('diag', 'shouldArmAutoContinuePre', 'armEligiblePre',
+  const obj = new Function('diag', 'shouldArmAutoContinuePre', 'armEligiblePre', 'isSubAgentSession',
     'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD',
     'return {' + extractFn('armAutoContinue(agent, wl, opts = null) {') + '};')(
     (m) => logs.push(String(m)), shouldArmAutoContinuePre, armEligiblePre,
+    (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 },
     DEFAULT_AUTO_CONTINUE_THRESHOLD, DEFAULT_WATER_LEVEL_THRESHOLD)
   const key = Object.keys(obj)[0]
   eng.arm = obj[key].bind(eng)

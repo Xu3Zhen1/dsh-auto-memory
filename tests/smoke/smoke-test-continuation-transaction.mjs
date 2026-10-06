@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { continuationProbePre, continuationRitualEndPre } from '../../lib/continuation.js'
-import { shouldArmAutoContinuePre } from '../../lib/water-window.js'
+import { shouldArmAutoContinuePre, armEligiblePre } from '../../lib/water-window.js'
 
 // ★本仓 CRLF：归一化后再按 LF 边界提取
 const host = readFileSync(new URL('../../lib/index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
@@ -25,6 +25,8 @@ const deps = { CONTINUE_CREATE_FALLBACK_ALLOWED_CODES: ['workspace/not-found'], 
   //   模块级绑定 ⇒ 必须一并注入，否则 ReferenceError 会被该方法自身的 catch 吞掉，
   //   表现为「明明达标却不 arm」（同 2026-09-14 shouldArmAutoContinuePre 的教训）。
   isSubAgentSession: (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 },
+  // ★2026-10-06（本 fork 重放 A）：armAutoContinue 的闸改用模块级 armEligiblePre ⇒ 同注入表纪律必须注入。
+  armEligiblePre,
   DEFAULT_AUTO_CONTINUE_THRESHOLD: .75, contTitleStampPre: () => '09-30 12:00', randomUUID: () => 'ritual-request-001' }
 function method(header, extra = {}) {
   const obj = compile('({' + extract(host, header) + '})', { ...deps, ...extra })
