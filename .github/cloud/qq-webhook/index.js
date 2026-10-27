@@ -90,7 +90,7 @@ const CFG = {
 for (const k of ['appId', 'appSecret', 'groupId', 'ghToken']) {
   if (!CFG[k]) { console.error(`[webhook] 缺少环境变量 ${k}`); process.exit(1) }
 }
-const VERSION = 'webhook-failclosed-20260921a' // 部署核对标记:diag 端点与错误响应都会带它(20260914a=@ 答疑优先于已记录;20260921a=#113-#116 四条默认值全部改 fail-closed)
+const VERSION = 'webhook-retry-20261009a' // 部署核对标记:diag 端点与错误响应都会带它(20260914a=@ 答疑优先于已记录;20260921a=#113-#116 四条默认值全部改 fail-closed;20261008a=#310 群反馈写 gist 改条件请求 CAS,防并发覆盖丢行;20261009a=#324 去重标记改为持久成功后才发布,持久失败回可重试 503)
 const FEEDBACK_FILE = 'group-feedback.jsonl' // 反馈收集钉死文件名(digest 与 report 同读此名,清空时保留文件本身)
 let lastError = null // 最近一次内部错误(diag 可见)
 let botMentionToken = null // 从「@机器人+反馈词」消息里学习的机器人 mention 标识
@@ -292,23 +292,92 @@ async function llmReply(userText) {
 }
 
 // ---------- GitHub(Gist 收集) ----------
+// ★2026-10-08(issue #310):API 基址可覆盖(默认官方)。存在的唯一理由是**可测** ——
+//   本缺陷是「读-改-写」的并发交错,只有让套件在本进程内起一个**真的 HTTP 假 GitHub**、
+//   让真身真的并发打两次请求,才能复现"两行只剩一行";打桩/源码 grep 都证明不了并发行为。
+const GH_API_BASE = (process.env.GITHUB_API_BASE || 'https://api.github.com').replace(/\/$/, '')
 const gh = (p, opts = {}) =>
-  fetch(`https://api.github.com${p}`, {
+  fetch(`${GH_API_BASE}${p}`, {
     ...opts,
     headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${CFG.ghToken}`, 'User-Agent': 'qq-webhook', ...(opts.headers || {}) },
-  }).then(async (r) => ({ ok: r.ok, status: r.status, body: r.status === 204 ? null : await r.json().catch(() => null) }))
+  }).then(async (r) => ({
+    ok: r.ok,
+    status: r.status,
+    // ★#310:并发协调靠的是**服务端版本号**(条件请求),故必须把这两个头带出来。
+    etag: r.headers.get('etag') || '',
+    lastModified: r.headers.get('last-modified') || '',
+    body: r.status === 204 ? null : await r.json().catch(() => null),
+  }))
+
+/** 反馈文件行数上界(与旧实现一致:只保留最近 400 条)。 */
+const FEEDBACK_MAX_LINES = 400
+
+/**
+ * ★#310:对共享 gist 文件的「读-改-写」并发布(**条件请求 CAS**)。
+ *
+ * 旧实现(gistAppend 直接 GET → 本地追加 → PATCH 整份)的失效形态:
+ * 两次调用(两个云函数实例 / 冷启动期的两个并发请求)从**同一份快照**出发,各自 PATCH 自己那份
+ * ⇒ 后写者把先写者的行整行抹掉,群反馈**静默丢失**。单实例内的 Promise 队列治不了它:
+ * 云函数是多实例的,实例之间没有共享内存;文件锁也落不到别人的容器里。
+ *
+ * 因此把协调交给**服务端**:
+ *   ① 每次 PATCH 带 `If-Match: <读出时的 ETag>`(缺失时回退 `If-Unmodified-Since: <Last-Modified>`);
+ *   ② 版本已被别人推进 ⇒ 服务端回 **412** ⇒ 重读最新内容 → 重算 → 重试(有界退避);
+ *   ③ 重试耗尽 ⇒ **显式抛错**(调用方按"这条没写成功"处理)——
+ *      **绝不**在拿不准版本时盲写:盲写等于用旧快照覆盖别人的新行,正是本缺陷的危害本身。
+ *   ④ 写完回读一次,确认**本行确实在文件里**(把"PATCH 返回 ok 但行没落进去"这种情况也变成失败)。
+ *      注意回读只认「本行在不在」,不去断言"旧行一条都不能少" —— 日报脚本本来就会清空该文件,
+ *      那种"消失"是业务语义,不是并发丢失。
+ *
+ * @param {(prevText:string)=>string} mutate 纯函数:读到的内容 → 期望写回的内容(重试会再调一次)
+ * @returns {Promise<{attempts:number}>}
+ */
+async function gistCasAppend(mutate) {
+  const ATTEMPTS = 5
+  let lastStatus = 0
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    const r0 = await gh(`/gists/${CFG.gistId}`)
+    if (!r0.ok) throw new Error(`读 gist 失败 ${r0.status}`)
+    const cur = String((r0.body && r0.body.files && r0.body.files[FEEDBACK_FILE] && r0.body.files[FEEDBACK_FILE].content) || '')
+    const next = mutate(cur)
+    const headers = { 'Content-Type': 'application/json' }
+    if (r0.etag) headers['If-Match'] = r0.etag
+    else if (r0.lastModified) headers['If-Unmodified-Since'] = r0.lastModified
+    else throw new Error('gist 响应既无 ETag 也无 Last-Modified:无法判定版本,拒绝盲写(宁可丢本次记录也不覆盖别人的新行)')
+    const r = await gh(`/gists/${CFG.gistId}`, { method: 'PATCH', headers, body: JSON.stringify({ files: { [FEEDBACK_FILE]: { content: next } } }) })
+    if (r.ok) {
+      // 回读确认本行落地(见上注 ④):读不到就一定不是"成功",不许当成功返回
+      const rb = await gh(`/gists/${CFG.gistId}`)
+      const after = String((rb.body && rb.body.files && rb.body.files[FEEDBACK_FILE] && rb.body.files[FEEDBACK_FILE].content) || '')
+      if (after === next) return { attempts: attempt }
+      lastStatus = 0   // 写成功但内容被并发改写 ⇒ 当冲突处理,重读重算
+      if (attempt === ATTEMPTS) throw new Error('写 gist 后被并发改写,回读校验未通过(本行未确认落地)')
+    } else if (r.status === 412) {
+      lastStatus = 412
+    } else {
+      throw new Error(`写 gist 失败 ${r.status}`)   // 非冲突类错误(鉴权/网络/限流)不重试,直接如实上报
+    }
+    if (attempt < ATTEMPTS) {
+      // 有界退避:让抢先者先落库,降低双方反复相撞的概率(云函数实例数很少,收敛很快)
+      await new Promise((res) => setTimeout(res, 30 * attempt + Math.floor(Math.random() * 30)))
+    }
+  }
+  throw new Error(`写 gist 冲突未收敛(已重试 ${ATTEMPTS} 次,末次状态 ${lastStatus}):并发写者过密,本次反馈未记录`)
+}
 
 async function gistAppend(line) {
   // 2026-09-13 修复:反馈一律写进**钉死的文件名** group-feedback.jsonl(PATCH 到不存在的文件名会自动创建)。
   // 旧实现取「gist 里第一个文件」——raw-debug 文件先建/清空后文件被删,第一个文件就会换人,
   // 反馈与原始调试混写(实测 14:29 的反馈行混进了 group-raw-debug.txt)。
-  const r0 = await gh(`/gists/${CFG.gistId}`)
-  if (!r0.ok) throw new Error(`读 gist 失败 ${r0.status}`)
-  const prev = (r0.body.files[FEEDBACK_FILE]?.content || '').split('\n').filter(Boolean)
-  prev.push(line)
-  while (prev.length > 400) prev.shift() // 只保留最近 400 条
-  const r = await gh(`/gists/${CFG.gistId}`, { method: 'PATCH', body: JSON.stringify({ files: { [FEEDBACK_FILE]: { content: prev.join('\n') + '\n' } } }) })
-  if (!r.ok) throw new Error(`写 gist 失败 ${r.status}`)
+  // ★2026-10-08(#310):上面的"读出的整份 → 追加 → 写回"必须整段放进 CAS 重试里 ——
+  //   把它拆成"先读一次,再带版本写一次"是不够的:412 之后必须用**新读到的内容**重算下一份,
+  //   否则重试写的还是过期快照,只是把覆盖延后一轮。
+  await gistCasAppend((cur) => {
+    const prev = cur.split('\n').filter(Boolean)
+    prev.push(line)
+    while (prev.length > FEEDBACK_MAX_LINES) prev.shift() // 只保留最近 400 条
+    return prev.join('\n') + '\n'
+  })
 }
 
 // 状态文件(bot-state.json,与反馈收集同一个 gist):@问答配额/定时班去重都落这里,防冷启动失忆
@@ -325,6 +394,15 @@ async function saveBotState(st) {
 // ---------- 事件处理 ----------
 const seen = new Set()
 const recentByContent = new Map() // 作者+内容 → 最近处理时间(重复推送去重,2026-09-14)
+// ★#324:去重标记是「这次事件已成功处置」的断言 ⇒ **只在持久化成功后才发布**(见 handleEvent 末尾)。
+//   旧实现把 seen.add / recentByContent.set 都放在 await gistAppend **之前**,而 gistAppend 失败只记
+//   lastError 就继续往下走 ⇒ 接口照常回 200、标记却已落 ⇒ 平台重推时直接 return,事件**永久未保存**。
+function publishSeen(id, dedupKey, nowMs) {
+  seen.add(id)
+  if (seen.size > 500) seen.delete(seen.values().next().value)
+  recentByContent.set(dedupKey, nowMs)
+  if (recentByContent.size > 500) recentByContent.delete(recentByContent.keys().next().value)
+}
 const clip = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '…' : t }
 const when = () => new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date())
 
@@ -346,8 +424,7 @@ async function handleEvent(payload, verified = false) {
     const d = payload.d || {}
     const id = d.id || `${d.timestamp}|${d.author?.username || d.author?.openid}|${d.content}`
     if (seen.has(id)) return
-    seen.add(id)
-    if (seen.size > 500) seen.delete(seen.values().next().value)
+    // ★#324:这里**只查不记** —— 记由 publishSeen(…, nowMs) 在「持久化成功之后」统一发布(见本函数末尾)。
     // 重复推送去重(2026-09-14 实测):平台会把同一条消息推两次(相隔 7-8 秒),**两次的 d.id 不同**
     // (id 尾部含递增 seq),故上面的 id 去重拦不住 —— 会导致群反馈记两遍、即查/答疑各回两次。
     // 这里按「作者 + 内容」做短窗口语义去重;时间戳字段缺失时退化为「作者+内容」永久去重(仅在 500 条窗口内)。
@@ -355,8 +432,7 @@ async function handleEvent(payload, verified = false) {
     const nowMs = Date.now()
     const prevAt = recentByContent.get(dedupKey)
     if (prevAt && nowMs - prevAt < 60000) { console.log('[webhook] 重复推送已忽略:', clip(d.content, 30)); return }
-    recentByContent.set(dedupKey, nowMs)
-    if (recentByContent.size > 500) recentByContent.delete(recentByContent.keys().next().value)
+    // ★#324:同 id 一样,语义去重标记也延后到持久化成功之后发布(publishSeen)。
     const mentions = [...String(d.content || '').matchAll(/<@!?([0-9A-Fa-f]+)>/g)].map((m) => m[1].toUpperCase())
     const text = String(d.content || '').replace(/<@!?[0-9A-Fa-f]+>/g, '').trim()
     const lower = text.toLowerCase()
@@ -380,8 +456,20 @@ async function handleEvent(payload, verified = false) {
         await gistAppend(JSON.stringify({ t: d.timestamp || new Date().toISOString(), u: clip(d.author?.username || d.author?.member_openid || '?', 16), w: collected, m: clip(text, 200) }))
         recorded = true
         console.log('[webhook] 已收集:', clip(text, 50), isAt ? '(随 @ 答疑合并确认)' : '(非 @,静默)')
-      } catch (e) { lastError = 'collect: ' + e.message; console.error('[webhook] 收集失败:', e.message) }
+      } catch (e) {
+        // ★#324:**这条反馈没落盘就不能算处理成功**。旧实现只记 lastError 后继续往下走,接口照常回 200,
+        //   而 seen/recentByContent 早在写入之前就落了标记 ⇒ 平台重推被去重挡死,事件永久丢失。
+        //   现在给错误打上标记 → 一路冒泡到 HTTP 层 → 回 503(可重试),且本次**不**发布任何去重标记。
+        lastError = 'collect: ' + e.message
+        e.feedbackPersistence = true
+        console.error('[webhook] 收集失败(将回 503 让平台重试):', e.message)
+        throw e
+      }
     }
+
+    // ★#324:到此为止本次事件已**成功处置**(无需收集 / 收集已落盘)才发布去重标记 ——
+    //   上方失败路径已经 throw 出去,不会走到这里,所以那两个缓存天然保住「可重试」。
+    publishSeen(id, dedupKey, nowMs)
 
     // ② @ 机器人的消息:先查即查指令(零 LLM,不占答疑额度);不是指令才走 LLM 答疑。
     if (isAt) {
@@ -741,8 +829,10 @@ const server = http.createServer((req, res) => {
       else res.end(JSON.stringify({ ...(out || {}), v: VERSION }))
     } catch (e) {
       console.error('[webhook] 处理异常:', e.message)
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end('{}')
+      // ★#324:反馈持久化失败必须回**可重试**的 503 —— 回 200 等于告诉 QQ 平台「收下了」,平台不再重推,
+      //   而这次事件根本没进 gist。其余异常沿用既有行为(200 + {}),避免把无关故障变成重试风暴。
+      res.writeHead(e.feedbackPersistence ? 503 : 200, { 'Content-Type': 'application/json' })
+      res.end(e.feedbackPersistence ? JSON.stringify({ error: 'feedback_persistence_failed' }) : '{}')
     }
   })
 })

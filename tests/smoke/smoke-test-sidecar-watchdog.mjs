@@ -135,12 +135,27 @@ console.log('\n[G1] 契约与影响面(源码级反向锁,不起进程)')
   // ★2026-09-29：白名单补 `node:fs` —— 新增的 worker 路径死链自愈（resolveWorkerScriptPathPre）
   //   需 existsSync 判存在性；仍属 **node 内置**，未引入任何 JS 语义侧模块（守卫本意不变）。
   const imports = [...src.matchAll(/^import[\s\S]*?from '([^']+)'/gm)].map((m) => m[1])
-  const allowed = new Set(['node:child_process', 'node:crypto', 'node:fs', 'node:path', 'node:url', './m7-wire.js'])
+  // ★2026-10-18：白名单补 `node:os` —— spawn 子进程前必须补回被宿主裁剪的用户目录环境
+  //   （USERPROFILE/HOME/APPDATA），否则 Python 的 site.py 把 user site-packages 推导成字面 `~`
+  //   ⇒ 用户已装好的 onnxruntime 导入失败 ⇒ embedder=None ⇒ 候选恒空 ⇒ 全部 suppress。
+  //   实测：补回后 C:\Python314 能 import 到 Roaming\Python\Python314\site-packages。
+  //   仍属 **node 内置**，守卫本意（不引用 JS 语义侧模块）不变。
+  const allowed = new Set(['node:child_process', 'node:os', 'node:crypto', 'node:fs', 'node:path', 'node:url', './m7-wire.js'])
   ok(imports.every((m) => allowed.has(m)), 'G1 依赖面收敛(Python 档自身)', JSON.stringify(imports))
   ok(!/semantic-js-pre|memory-hub-pre|fact-store-pre|procedure-store-pre|context-host-pre/.test(src),
     'G1 本模块不引用 JS 端语义模块(无联动)')
-  // 不得硬编码 python:命令由调用方给,缺省才回落 'python'
-  ok(/resolveOpt\('command'\) \|\| 'python'/.test(src), 'G1 python 命令仅为缺省回落,可被调用方覆盖')
+  // ★2026-10-19 判据更新（原判据「缺省回落 'python'」已被证伪并撤销，不得回滚成旧写法）：
+  //   旧断言 /resolveOpt('command') \|\| 'python'/ 断言的**正是本事故的入口** ——
+  //   探测缓存未命中时静默拿系统 python 起进程 ⇒ 无 transformers ⇒ embedder=None ⇒ 恒 suppress
+  //   （真机实测 256/256 shadow 决策全 suppress_low_signal，且进程终身不自愈）。
+  //   新不变量（更强，且由 a29 套件 A 组做真执行验收）：
+  //     ① 命令不再有裸 'python' 兜底；
+  //     ② 验证模式（requireVerifiedCommand）下拿不到已验证命令 ⇒ 拒绝 spawn（fail-closed）；
+  //     ③ 命令仍可由调用方覆盖（resolveCommand / 显式 command）。
+  ok(!/resolveOpt\('command'\) \|\| 'python'/.test(src), 'G1 ★裸 python 兜底已移除（历史 bug 不得回归）')
+  ok(/requireVerifiedCommand/.test(src), 'G1 验证闸开关存在')
+  ok(/interpreter-unverified/.test(src), 'G1 拿不到已验证解释器时 fail-closed 的结构化归因码存在')
+  ok(/rawOpt\('resolveCommand'/.test(src), 'G1 resolveCommand 以函数本体取得（不得被 opt() 当场求值，见 a29 B1 踩坑）')
 }
 console.log('\n[G2] 熔断口径:段内进度帧成功不清零 / 终态成功才清零(#107)')
 {

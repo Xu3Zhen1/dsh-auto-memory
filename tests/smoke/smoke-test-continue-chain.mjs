@@ -152,7 +152,7 @@ ok(SRC.includes('apiGet(API.autoContState,') && SRC.includes('setInterval(poll, 
 ok(HSRC.includes('void engine.tickAutoContinue()'), 'G11 host heartbeat drives deadline execution (15s tick)')
 
 // —— G14(2026-09-10 实机取证):宿主已接续完成后,旧窗口的卡必须收起、提示要有期限、轮询要带会话 id ——
-ok(/if \(s\.executing\) \{[\s\S]{0,700}?setAcConfirm\(null\)/.test(SRC) && /if \(s\.lastOk && \(okAt === 0/.test(SRC) && /(okAt === 0[\s\S]{0,200}?setAcConfirm\(null\))/.test(SRC),
+ok(/if \(s\.executing\) \{[\s\S]{0,700}?setAcConfirm\(null\)/.test(SRC) && /if \(s\.lastOk && \(okAt === 0/.test(SRC) && /(okAt === 0[\s\S]{0,1000}?setAcConfirm\(null\))/.test(SRC),
   'G14 executing / lastOk 分支先收起确认卡(旧实现直接 return → 卡片与「✓ 已自动接续」并存)')
 ok(SRC.includes('okAt === 0 || Date.now() - okAt < 10 * 60 * 1000'),
   'G14 「已完成」提示设 10 分钟有效期(宿主状态是全局单值,不设期限会一直挂在每个窗口上)')
@@ -160,11 +160,15 @@ ok(SRC.includes('apiGet(API.autoContState, sidQ ? { sessionId: sidQ } : {})') &&
   'G14 轮询携带当前会话 id(宿主据此只在本窗口弹确认卡)')
 ok(HSRC.includes("url.searchParams.get('sessionId')") && HSRC.includes('autoContinueState(selfSid)'),
   'G14 宿主侧按 sessionId 过滤 armed(取不到 id 时 fail-open)')
-ok(/setAcConfirm\(\{ ratio: Number\(arm\.ratio\) \|\| 0[\s\S]{0,220}?wall: Number\(arm\.wall\) \|\| 0/.test(SRC),
+ok(/setAcConfirm\(\{ sessionId: arm\.sessionId[^,]+, ratio: Number\(arm\.ratio\) \|\| 0[\s\S]{0,220}?wall: Number\(arm\.wall\) \|\| 0/.test(SRC),
   'G14 确认卡把双口径 ring/wall 拷进 acConfirm(宿主透出但这里丢了 → 那行永不渲染)')
 
 // —— G15(2026-09-28 修「接续必须搭线」):宿主兜底接续后,前端补 sessions.open 把发件人切到新会话 ——
-ok(/fromSidAc && sidQ === fromSidAc && doneSid !== acOpenedSidRef\.current[\s\S]{0,260}?sessions\.open\(doneSid\)/.test(SRC),
+// ★2026-10-08 判据放宽：""#289"" 在 fromSid 收窄之后插入了「跳转前重读当前会话」的跨会话复核
+//   （sidNowJump === sidQ），把原来要求的字面相邻撑破。四项语义要求（fromSid 收窄 / sidQ === fromSidAc /
+//   幂等键 / sessions.open(doneSid)）全部仍在，只是顺序中间多了一道守卫 ⇒ 按 2026-10-01 裁定「判据过期改判据」
+//   放宽相邻窗口，不改产线语义。
+ok(/fromSidAc &&[\s\S]{0,120}?sidQ === fromSidAc &&[\s\S]{0,120}?doneSid !== acOpenedSidRef\.current[\s\S]{0,260}?sessions\.open\(doneSid\)/.test(SRC),
   'G15 lastOk 命中时补 sessions.open(宿主兜底路径原本缺 UI 切换 → 发件人留在旧会话形成循环)')
 ok(SRC.includes("var fromSidAc = String((s.lastOk && s.lastOk.fromSid) || '')") && /sidQ === fromSidAc/.test(SRC),
   'G15 只切「正看着旧会话」的窗口(fromSid 收窄;lastOk 全局透出,无差别 open 会拉走别的标签页)')

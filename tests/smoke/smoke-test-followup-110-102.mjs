@@ -32,21 +32,21 @@ try {
   {
     const health = createHubIoHealthPre()
     const io = createHubIoPre({ dir, health })
-    const facts = io('facts.json')
+    const procedures = io('procedures.json')
 
     ok(typeof io.beginBatch === 'function' && typeof io.endBatch === 'function' && typeof io.batchPending === 'function',
       'io 适配器暴露批控制（beginBatch/endBatch/batchPending）')
 
     io.beginBatch()
-    facts.save({ facts: [{ n: 1 }] })
-    facts.save({ facts: [{ n: 1 }, { n: 2 }] })
-    facts.save({ facts: [{ n: 1 }, { n: 2 }, { n: 3 }] })
+    procedures.save({ procedures: [{ n: 1 }] })
+    procedures.save({ procedures: [{ n: 1 }, { n: 2 }] })
+    procedures.save({ procedures: [{ n: 1 }, { n: 2 }, { n: 3 }] })
     ok(io.batchPending() === 1, '同文件 3 次 save 在批内合并成 **1** 个待写（这就是消除写放大）')
-    ok(!existsSync(path.join(dir, 'facts.json')), '批内**尚未落盘**（写盘被推迟到批末）')
+    ok(!existsSync(path.join(dir, 'procedures.json')), '批内**尚未落盘**（写盘被推迟到批末）')
     const r = io.endBatch()
     ok(r.written === 1 && r.ok === true, '批末一次写出 1 份快照')
-    const back = facts.load()
-    ok(back && back.facts.length === 3 && back.facts[2].n === 3, '落盘内容是**最后一份**（全量快照 ⇒ 合并语义无损）')
+    const back = procedures.load()
+    ok(back && back.procedures.length === 3 && back.procedures[2].n === 3, '落盘内容是**最后一份**（全量快照 ⇒ 合并语义无损）')
     ok(!readdirSync(dir).some((n) => n.endsWith('.tmp')), '批末落盘后不残留 .tmp')
     ok(health.saves === 3, 'health.saves 仍如实记 3 次 save 调用（诊断面不被合并掩盖）')
   }
@@ -84,15 +84,31 @@ try {
     ok(s.getStats().pruned === 2, '累计淘汰 2 条（每次落盘只删到刚好回到上限，不一次清空）')
   }
   {
-    const s = mk(2)
-    s.upsert(cand(1, { provenance: ['src-old'] }))
-    s.upsert(cand(2))
-    s.upsert(cand(3))
-    s.revokeBySource('src-old')
-    s.upsert(cand(4)) // 再挤一次，触发淘汰
+    // ★#277 修法（2026-10-08）：原夹具**在调用 revoke 之前**就已经因为上限淘汰了目标值 ——
+    //   mk(2) 下 upsert(1..3) 时长度 3 > 2 ⇒ 值1（confirmedAt 最旧）当场被年龄淘汰；
+    //   随后的 revokeBySource('src-old') 作用在**已不存在的记录**上 ⇒ 返回 revoked=0，
+    //   而两条断言（值1 不在、size=2）都因「它早就没了」而恒真 ⇒ 只验证了普通年龄淘汰，
+    //   **撤销优先这条语义从未被验证**（报告者离线复现即此）。
+    //   修法：① 上限放宽到 3，使 revoke 在记录**仍在库中**时发生，并断言 revoked > 0；
+    //        ② 把被撤销项设为**比另一条更晚**写入 ⇒ 纯年龄淘汰会先删更旧的那条，
+    //           只有「撤销优先」才会先删被撤销项 ⇒ 本用例因此具备鉴别力。
+    const s = mk(3)
+    s.upsert(cand(1))                              // confirmedAt=1001（最旧，未被撤销）
+    s.upsert(cand(2, { provenance: ['src-old'] })) // confirmedAt=1002（将被撤销，比值1 新）
+    s.upsert(cand(3))                              // confirmedAt=1003
+    ok(s.size === 3, '#277 前置：撤销前 3 条都在库中（revoke 作用在真实记录上）')
+    const rev = s.revokeBySource('src-old')
+    ok(rev && rev.ok === true && rev.revoked > 0,'★#277 revokeBySource 真的撤销了记录（revoked=' + (rev && rev.revoked) + '，旧夹具恒为 0）')
+    s.upsert(cand(4)) // 再挤一次，触发淘汰（over=1）
     const objs = s.query().map((f) => f.object)
-    ok(!objs.includes('值1'), '★已撤销的（值1）优先被清掉')
-    ok(s.size === 2, '仍收敛到上限 2')
+    ok(!objs.includes('值2'), '★已撤销的（值2）优先被清掉')
+    ok(objs.includes('值1'), '★鉴别力：**更旧但未撤销**的（值1）反而存活 ⇒ 清掉的是撤销项而非最旧项')
+    ok(!objs.includes('值2') && objs.includes('值1') && objs.includes('值3') && objs.includes('值4'),
+      '#277 幸存集合逐字匹配：' + JSON.stringify(objs))
+    ok(s.size === 3, '仍收敛到上限 3')
+    // 反向对照：把同一批记录按**纯年龄**排序，应删 值1 —— 证明本夹具确实能区分两种口径
+    const ageOrder = [1, 2, 3, 4].map((n) => 1000 + n)
+    ok(ageOrder[0] === 1001, '#277 反向对照：纯年龄口径下最旧的是 值1（故撤销优先必须删 值2 才具鉴别力）')
   }
   {
     const s = mk(2)
@@ -135,10 +151,10 @@ try {
     ok(/engine\._hubIoFactory = hubIo/.test(INDEX), 'io 工厂挂到 engine（跨块可取到批控制）')
     ok(/ioFactory\.beginBatch\(\)/.test(INDEX) && /ioFactory\.endBatch\(\)/.test(INDEX), 'feed 循环确实开关了批')
     ok(/\} finally \{[\s\S]{0,400}endBatch\(\)/.test(INDEX), '★endBatch 放在 finally（任何一行抛错都不把改动留在内存不落盘）')
-    ok(/createFactStorePre\(\{ config: \{ maxFacts: Number\(engine\.config\.factRetentionMax\) \|\| 1000 \}/.test(INDEX),
+    ok(/createFactStorePre\(\{ config: \{ get maxFacts\(\) \{ return Number\(engine\.config\.factRetentionMax\) \|\| 1000 \}/.test(INDEX),
       'index.js 把 factRetentionMax 传给 fact store')
     ok(/factRetentionMax: 1000/.test(INDEX), 'DEFAULT_CONFIG 有 factRetentionMax（默认 1000）')
-    ok(/getLastPrune: \(\) =>/.test(FACT) && /retentionLimit: \(\) => maxFacts/.test(FACT), 'fact store 暴露淘汰痕迹与上限（可诊断）')
+    ok(/getLastPrune: \(\) =>/.test(FACT) && /const retentionLimit = \(\) =>/.test(FACT) && /retentionLimit,/.test(FACT), 'fact store 暴露淘汰痕迹与上限（可诊断）')
   }
 } finally {
   try { rmSync(tmp, { recursive: true, force: true }) } catch (_) {}

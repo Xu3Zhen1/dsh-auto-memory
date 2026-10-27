@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { continuationProbePre, continuationRitualEndPre } from '../../lib/continuation.js'
-import { shouldArmAutoContinuePre, armEligiblePre } from '../../lib/water-window.js'
+import { shouldArmAutoContinuePre } from '../../lib/water-window.js'
 
 // ★本仓 CRLF：归一化后再按 LF 边界提取
 const host = readFileSync(new URL('../../lib/index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
@@ -24,10 +24,8 @@ const deps = { CONTINUE_CREATE_FALLBACK_ALLOWED_CODES: ['workspace/not-found'], 
   //   isSubAgentSession（子代理会话不得 arm）。抽出的方法体在 new Function 里重建，作用域中没有
   //   模块级绑定 ⇒ 必须一并注入，否则 ReferenceError 会被该方法自身的 catch 吞掉，
   //   表现为「明明达标却不 arm」（同 2026-09-14 shouldArmAutoContinuePre 的教训）。
-  isSubAgentSession: (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 },
-  // ★2026-10-06（本 fork 重放 A）：armAutoContinue 的闸改用模块级 armEligiblePre ⇒ 同注入表纪律必须注入。
-  armEligiblePre,
-  DEFAULT_AUTO_CONTINUE_THRESHOLD: .75, contTitleStampPre: () => '09-30 12:00', randomUUID: () => 'ritual-request-001' }
+  panelAllowedHosts: [], forbiddenPanelPayloadPre: (req) => ({ error: 'forbidden: panel-access' }), isSubAgentSession: (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 },
+  DEFAULT_AUTO_CONTINUE_REFRESH_TIMEOUT_SECONDS: 120, DEFAULT_AUTO_CONTINUE_PROBE_TIMEOUT_SECONDS: 60, DEFAULT_AUTO_CONTINUE_THRESHOLD: .75, contTitleStampPre: () => '09-30 12:00', randomUUID: () => 'ritual-request-001' }
 function method(header, extra = {}) {
   const obj = compile('({' + extract(host, header) + '})', { ...deps, ...extra })
   return Object.values(obj)[0]
@@ -103,6 +101,7 @@ await check('C05 permission-only callback cannot commit continuation', async () 
   const src = extract(host.slice(routeOffset), 'handler: async (req, res) => {').replace(/^handler: /, '')
   const e = engine()
   const handler = compile('(' + src + ')', { engine: e, isLoopbackRequest: () => true,
+    panelAllowedHosts: [], forbiddenPanelPayloadPre: (req) => ({ error: 'forbidden: panel-access' }),
     readJsonBody: async () => ({ fromSessionId: 'source', toSessionId: 'empty' }), writeJson() {} })
   await handler({}, {})
   assert.equal(e.marked.size, 0)
@@ -159,11 +158,14 @@ await check('C09 browser pins source before network and opens only returned succ
   let sid = 'A', posted, opened
   const run = compile('(' + extract(client, 'async function runContinueFlow(opts) {') + ')', {
     currentSessionIdClient: () => sid, continueFlowBusy: false, L: (zh, en) => en, API: { autoContDecide: 'decide' },
-    apiPost: async (p, body) => { posted = body; sid = 'B'; return { ok: true, sessionId: 'successor-A' } }, sessions: { open: s => { opened = s } },
+    apiPost: async (p, body) => { posted = body; sid = 'B'; return { ok: true, sessionId: 'successor-' + body.sessionId } }, sessions: { open: s => { opened = s } },
   })
   await run()
   assert.deepEqual(posted, { action: 'manual', sessionId: 'A' })
-  assert.equal(opened, 'successor-A')
+  assert.equal(opened, undefined, 'late completion cannot navigate away from the user-selected B session')
+  sid = 'B'
+  await run()
+  assert.equal(opened, 'successor-B')
 })
 await check('C10 manual uses stop, model, permission, delivery, then commit order', async () => {
   const e = engine()
@@ -182,7 +184,11 @@ await check('C11 unresponsive inspection is bounded and releases the execution l
   let reads = 0
   e._sessionController.inspect = async (sid, signal) => { assert(signal); return ++reads === 1 ? { events: [] } : new Promise(() => {}) }
   e.hostRefreshRitual = method('async hostRefreshRitual(oldSid) {', {
-    continuationProbePre: (probe, ms) => { assert(ms > 0 && ms <= 30000); return continuationProbePre(probe, Math.min(20, ms)) },
+    // ★v3.3.14 判据更新：probe 上限由写死 30s 改为可配置（默认 60s，允许 10–300）。
+    //   原断言 ms <= 30000 是「上限恒为 30s」时代的判据，现已过期；改为钉住**新的真实上界**：
+    //   任何 probe 的 ms 都必须 > 0 且不超过配置上界 300s（仍能证明「有界、不会无限等」）。
+    //   判据意图不变（不受理的 inspection 必须有界），只是边界值跟着代码演进上移。
+    continuationProbePre: (probe, ms) => { assert(ms > 0 && ms <= 300000); return continuationProbePre(probe, Math.min(20, ms)) },
   })
   const result = await e.decideAutoContinue('manual', null, 'source')
   assert.equal(result.ok, false)

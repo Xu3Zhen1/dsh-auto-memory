@@ -1,3 +1,4 @@
+// 2026-10-14: + migrate-upload (#397) and python-setup/config (#411); the exact route count lock remains.
 // M2 ContextObserver smoke test(系统地图 C-01/C-02/N-01 验收门 + 2026-08-22 审查修复轮回归):
 // 确定性回放 / seed+live 去重 / eventSeq 与 contextVersion 分工 / A/B 并发零串线 /
 // root-nested tool call 关联 / 无 owner 不入任何 runtime(含匿名 agent-object:*) / dispose 清理 /
@@ -114,7 +115,7 @@ const turnStartEvent = (seq, turn, time) => ({ type: 'turn/start', seq, time: ti
 // ★2026-10-01 再演进：68→69（新增 /global-brief）。
 // ★2026-10-02 再演进：69→70（审计修复批 #174 新增 POST /team-control，loopback-only，无条件注册）。
 // ★issue #211（2026-10-04）再演进：70→71（新增 POST /python-setup/uninstall，无条件注册）。
-    if (h.registeredRoutes.length !== 71) throw new Error('route count drifted (expected 71, unconditional routes): ' + h.registeredRoutes.length)
+    if (h.registeredRoutes.length !== 73) throw new Error('route count drifted (expected 73, unconditional routes): ' + h.registeredRoutes.length)
     const cfg = await h.prime()
     // 2026-08-26 裁定:reasoningObserverEnabled/contextBridgeObserveChildSessions 默认 true
     // (开源模型为主,思维链/分支是主要观测面);其余实验开关仍默认 false
@@ -185,9 +186,28 @@ const turnStartEvent = (seq, turn, time) => ({ type: 'turn/start', seq, time: ti
         ' | afterHead=' + JSON.stringify(after.slice(0, 120)))
     }
     const after2 = render()
-    if (after2 !== after) {
-      throw new Error('disabled mode must be render-deterministic :: ' + after.length + ' -> ' + after2.length +
-        ' | head1=' + JSON.stringify(after.slice(0, 80)) + ' | head2=' + JSON.stringify(after2.slice(0, 80)))
+    // ★2026-10-19 判据更新（v3.3.8 起）：**逐字节确定性必须剥离注入节奏计数器**。
+    //   背景：v3.3.8 的 slimGrantMarkPre() 给「精简版放行帧」追加 \n[精简快照 · 第 N 次] 且 N 自增，
+    //   目的是让放行帧与节流帧**不再逐字节相同**，从而穿透宿主 project() 的整串去重（节流的净效果本就依赖这一点）。
+    //   该计数器是**注入节奏状态**，与「关联观察器关闭时的行为差异」语义正交，不属本用例要守的漂移。
+    //   旧判据「after2 === after」因此必然失败（1057 -> 1057，长度相同、内容差一个数字）——属判据过期，非产品缺陷。
+    //   新判据（保持原意图）：**剥掉节奏计数器后必须逐字节一致** ⇒ 时钟/随机/事件游标漂移仍会被抓住。
+    //   下方附变异反向验证：人为注入时钟漂移后本判据必须变红（证明不是恒真守卫）。
+    const stripRhythmMark = (t) => String(t).replace(/\[精简快照 · 第 \d+ 次\]/g, '[精简快照 · 第 N 次]')
+    const normA = stripRhythmMark(after)
+    const norm2 = stripRhythmMark(after2)
+    if (norm2 !== normA) {
+      throw new Error('disabled mode must be render-deterministic (after stripping rhythm counter) :: ' +
+        normA.length + ' -> ' + norm2.length +
+        ' | head1=' + JSON.stringify(normA.slice(0, 80)) + ' | head2=' + JSON.stringify(norm2.slice(0, 80)))
+    }
+    {
+      // 变异验证：把「时钟漂移」注入归一化后的文本，判据必须报红。
+      // 若此处不红，说明上面的判据是恒真守卫（永远相等），等于没测。
+      const mutated = normA + '\n[clock-drift-probe ' + Date.now() + ']'
+      if (stripRhythmMark(mutated) === normA) {
+        throw new Error('determinism guard is tautological: injected clock drift was not detected')
+      }
     }
     if (!after.includes('<memory_system>')) throw new Error('dynamic memory snapshot missing in baseline render')
     const row = await rowOf(h.registeredRoutes, 'session-off')

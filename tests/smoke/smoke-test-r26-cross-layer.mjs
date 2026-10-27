@@ -353,20 +353,255 @@ ok(damNoMixedEol(SRC), 'E2 纯 CRLF')
 //   回归守卫 = 新增套件 smoke-test-inj2-full-every-slims-migrate（13 条，含正/负/陷阱回归/幂等/fail-soft 与真磁盘副作用）。
 //   判据守恒：路由数 71 不变、依赖面 {} 不变、既有 capacityDefaultsVersion 键与两条容量迁移调用点均未动。
 //   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
-//   ★2026-10-06 fork 放行（本 fork 在 v3.2.10 基线上重放 A/B，见 plan/交接模块优化评估报告.md §18）：
-//   R80(上游 `3B2B988A0E1FE2EB`) → **R80-fork**，新增两处有意变更：
-//     ① A（§2.7/§2.8）：`over` 与 arm 闸改为**共用** `armEligiblePre`；生效阈值经
-//        `rt.waterLevelThreshold` 由两个调用点透传（上游 v3.2.8 只给硬信号开了绕过，
-//        arm 闸仍读配置值 ⇒ `threshold<ratio<autoContinueThreshold` 区间「催了但不动」）；
-//        另给全部早退点补 `suppressed by …` 同帧 diag（§2.6 消除静默拒绝）。
-//     ② B（§3）：交接契约指针进 navParts（放在 `if (pack)` 之外，判决走
-//        handoff-anchor.js:contractPointerLinePre 纯函数，含 nav 占比自检）。
-//   ★C 项（仪式静默判据）**已放弃**：上游 3.2.6+ 以 lib/continuation.js:continuationRitualEndPre
-//     的回合级因果判据取代之，重放 C 等于回退上游（§18.5）。
-//   判据守恒：路由数 71 不变；守卫语义不变——仍锁该文件的字节基线，只更新被锁的值。
-eq(createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase(), '0582169AD86933E2', 'E3 ★宿主 lib/index.js 基线守恒（R80-fork = 上游 R80（3.2.10 全部修复，见下行原说明）之上叠加本 fork 的 A/B 两项交接模块优化：①arm 闸与 over 共用 armEligiblePre + 生效阈值 rt.waterLevelThreshold 两调用点透传 + 早退点同帧 diag；②契约指针进 navParts。C 已按 §18.5 作废不再重放。上游 R80 = R79 + 2026-10-06 #226 改法A（异常监听具名化 + 卸载 removeListener + 复位两个 guard 标志）＝ R79 = R78 + 2026-10-05 批次 Z（PR#213「Fix seven residual data-safety and ownership issues」后端拆取）：X1 删除 CAS（deleteMemory 对实际 buf 无条件 sha256 CAS，冲突 conflict-external-edit）；X2 note 绑定服务端（/note 路由 sessionId+expectedNotesPath 必填 + resolvePathsForSession + 409 漂移 + 读盘去重 + 缓存按归属更新）；X3 JSON 路径重写（rewriteJsonPathsPre token 级重写，.json/.jsonl 分派）；X4 procedure 证据五子项（owner 双归属限定 + 先持久化后统计 + success-exclusion + procedureWorkspaceRef=canonicalize 不引入 workspace-key.js（#179 领地）+ normalizeSessions 统一哈希身份 + loadEvents strict（30s 指纹缓存，读失败不缓存，display 保持容忍））；X5 导入安全（全量占用名清单 + target-inspection-failed fail closed + token 全覆盖 + commit 前 lstat/digest 复核 + additions 不用 link() 改 lstat 空闲确认+原子写 + 逐文件 withCalendarLock + backup randomUUID 防同秒撞名）。；原 R77 = R76 + 2026-10-05 批次 W（PR#210「Make continuation and archive state durable (#207)」拆取采纳）：①W1 cont-seq：allocContSeq 改跨进程共享锁内「重读→(仅 last≤0 时)冷扫→推进→原子提交→成功才发布」，写失败抛错不发号；冷扫放开 120 上限（leaf 读取失败跳过、目录级错误拒绝并指路、SQLite 维持拒绝+seed 指引）；rollbackContSeq 变 no-op（「不跳号」翻转为「允许空洞、永不回收」，2026-10-05 用户裁定）；锁模块与 calendar-lock 物理合一（calendar-lock.js 变薄壳 re-export）。②W2 接续闩分片：auto-continue-done.d/<SHA256>.json + token + 旧格式只读兼容 + (mtime,size) 读取缓存，删 200 条 slice 上限。③W3 pending/恢复：reserve→setTarget(rawId)→finish 三段持久化、autoContinueState 加 pending/completed、decideAutoContinue manual 与 hostAutoContinue(armed) 两入口 pending 拦截、恢复 CLI lib/continuation-maintenance.js（三重校验+.active 锁）。④W4 归档账本 delta：saveArchiveLedger(updates,removed) 锁内新鲜读→合并→原子写；sweep 删 _saLedger 缓存每轮新鲜读；归档分支账本提交失败 rep.ok=false+errors 外显+提前 return 跳过本轮删除。⑤W5 创建门：createSuccessor 包装 —— details.sessionId 存在即持久化原始 ID 不二建；仅类型化放行单（CONTINUE_CREATE_FALLBACK_ALLOWED_CODES）且 workspaceId 规范化精确匹配才放行源 cwd 回退，其余保留 pending。；原 R76 = R75 + 2026-10-05 工作台路径符号链接归一 + 新建熔断（见上方注释）；原 R75 = R74 + 2026-10-04 issue #211：新增 /python-setup/uninstall 路由 + python-setup 模块 uninstall()（删 <userDir>/python-engine 整目录）；原 R74 = R73 + 2026-10-03 批次 G：①#167/P0 [USER] 不直写全局（自动沉淀 + 做梦式固化两处同改，落 PENDING-USER-MEMORY.md）；②#167/P1 解析层确定性过滤（filterPointsPre，三档各一次）；③#207 三处裸写改按路径串行 + 原子写（cont-seq / 接续闩 / 归档账本），删自建第二套按文件链统一走 path-write-queue，归档账本读取改损坏隔离；④#207-4 新增 localWasmPaths 键 + worker wasm 路径本地化。前序 R73 = R72 + 2026-10-02 审计修复批 A+B 批：#182/#178/#205/#184 + #174/#185 团队接线（含 /team-control 路由、装配段 pull 定时器移位、_teamOutbox.load、真实卸载路径接团队 dispose）：①日历三写入口改锁内读盘+原子写，正则补 --:--；②compactLegacyLayer 归档提到护栏前且归档全部被移除段；③saveConfig 迁移补 mkdir+失败回滚+原子写。前序 R72 = R71 + 2026-10-01 接续开关默认开：DEFAULT_CONFIG.globalBriefEnabled false→true（用户裁定「把读取外部记忆的开关默认打开」）；前序 R71 = R70 + 2026-10-01 自写豁免接线 + 团队注入候选生产者：①_noteSelfWritePre 原为零调用点 ⇒ 挂到 4 个写盘原语（appendText/writeFullRaw/writeFullSingle/writeFull）⇒ 豁免真正生效；②_teamInjectCandidates 原只有 = [] 两次赋值、无生产者 ⇒ 把 pullOnce 的 appliedEntries 经 normalizeTeamSegmentsPre 喂入。前序 R70 = 记忆注入优化；原 R70 说明：（R70 + 2026-10-01 全局动态简报批：新增 lib/global-brief.js 纯模块 + 8 个 globalBrief* 配置键 + 精简版注入路径补 diag（用户要求可计量）+ 简报段并入注入主路径；前序 R70 = R69 + 记忆注入优化：精简版瘦身 + 完整版两档门槛 + 2 个配置键 + 2 层提示词；原 R69 说明：①规则编辑 GUI 路由按 expect 内容锚定防索引漂移 ②两处 _degradePre 死代码改接真实 _degradeSink ③sessions 兜底说明不再写死「39 个旧会话/descriptor v2」改为如实输出；归一化 LF 后计。前序 R68 = R67 + G 批发射闸单钥匙化；R63→R65 放行 = skinAssetRelOfPre/skinAbsPathOfPre 加 deep 参数（素材路由 ?deep=1 选暗色资源）+ #152 增量开关每轮取值 + #153 默认模型回退共用解析器（provider/实现名不再混用）+ #154 接续创建失败显式报错不丢源工作区 + 上述 3.2.5 全部修复保留，理由见上）')
+// ★2026-10-08 批次 A1 重钉（R85 → R86）：lib/index.js **有意演进** —— A1 三项修复：
+//   ①#248 C01：applyNoteStatusPre 的快照 digest 入 CAS（writeFull 传 expectedDigest），
+//     compactLegacyLayer 改读磁盘快照 + 回写带 CAS、冲突转结构化拒绝（conflict-retry-exhausted）；
+//   ②#249 C02：新增 lib/memory-mutation-transaction.js，生产写通道统一 admission
+//     （迁移窗口内新写 409 SETTINGS_MIGRATION_ACTIVE；已受理的写照常完成由既有 drain 拷入新根）；
+//   ③#251 RL-01：apply 的资源所有权前移（disposeSurfaces 幂等 + sources effect 提前登记 + 异常回滚），
+//     hub feed/boot 计时器改挂 surfaces disposer 栈，dispose 后不再有迟到心跳写盘。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 4C9E0A6B2C750A84 由**本套件自身的剥离表达式**复算得出。）
+// ★2026-10-08 批次 L-A 重钉（R86 → R87）：lib/index.js **有意演进** —— L-A 车道六项 + 一处跨车道接线：
+//   ①#253 RL-03：SessionRuntimeStore.dispose/disposeAll 收口 Context Host per-runtime 态
+//     （`contextHost.disposeRuntime` 此前**全仓零调用方** ⇒ pathsByKey 陈旧快照 + sink 侧会话态不回收），
+//     并在 apply 的 host 装配段把 `runtimes._contextHost` 与既有两处**成对回填**；
+//   ②#257 SEC-01：敏感段策略收敛为 lib/injection-policy.js 单一来源（同文件内联版删除），
+//     Tier-0 常驻目录的来源正文与命中投影**双双过过滤**（旧实现两处都绕开 ⇒ 密钥进 prompt）；
+//   ③#258 SEC-02：新增 lib/team-policy.js 并接线（配置写门 / 白板 / 日历 / 四个写盘原语 / 发送出口），
+//     `_assertTeamActionPre` 调用点 0 → 9；HTTP 侧补 statusCode 映射（403 而非 500）；
+//   ④#260 OBS-01：轮转检查移入写队列、每次按「已落字节+本行」判定 + 单行 8192B 上限
+//     （旧实现首次轮转成功即永久跳过）；
+//   ⑤#264 OCR-02：python-setup 加 isLive 准入（exclusive 包装 + uninstall），index.js 注入 `!engine._disposed`；
+//   ⑥#269：健康探测挂 child/stdin/stdout/stderr 四处 error 监听、轮询首查即结束并回填 error 码，
+//     新增 `_healthProbeSpawn` 接缝（**默认实参即产线 cpSpawn**，无「测试模式」分支）；
+//   ⑦跨车道接线（L-B #250）：`rehydrateProcedureScopes` 改调 `io.load({ pendingSnapshot, authoritativeIds })`，
+//     删掉本文件内手写的「磁盘∪内存」并集（同一语义两份实现）。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（均为**代数性**改动，未新增/删除路由）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 694C206E798AAE14 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写。）
+// ★2026-10-08 R2 重钉（R88 → R89）：lib/index.js **有意演进** —— C 类 #254 MAINT-01（用户裁定方案 B'「缩进续行」）：
+//   ①parseCalendar 增加**缩进续行**识别（多行备注不再在解析阶段丢行）；②renderCalendar 对含 \n 的 note 按缩进续行输出；
+//   ③孪生路径 lib/migrate-pack.js 的 calendarMergePre 同步（同一条缺陷的第二个出口：旧实现把 note 拼回单行）。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由，仅函数体语义修正）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 1BBD701335E01BCA 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写；
+//     同口径复算 HEAD(5245e4a 侧) = 70C221D02149DF15 ⇒ 旧锁当时自洽，本次属有意演进。）
+// ★2026-10-08 R3 重钉（R89 → R90）：lib/index.js **有意演进** —— P1 #281 孤立代理（会话级不可自救）：
+//   truncateHead / truncateLinesBounded / truncateTail 此前按 **UTF-16 code unit** 切串，切点落在代理对
+//   中间时产出**孤立代理**（实测 truncateHead('abc'+U+1F4D6+'def', 4) ⇒ 末位 code unit = U+D83D）⇒ 随注入
+//   快照进 prompt ⇒ API 400 INVALID_REQUEST ⇒ 该会话每轮都失败且无法自救（注入每轮发生，新开会话复发）。
+//   现三处切点仅在「恰落在对中间」时挪动 1 位（head 左移 / tail 右移），其余情形输出**逐字节不变**
+//   （由专项套件 tests/smoke/smoke-test-issue281-surrogate-truncate.mjs 断言全等，含负路径变异必红）。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由，仅函数体语义修正）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 3EAC76EE1B072D25 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写；
+//     专项套件以自身表达式独立复算同值，两处口径一致。）
+// ★2026-10-08 L-A2 重钉（R91 → R92）：lib/index.js **有意演进** —— #259 SEC-03 迁移导出的物理边界：
+//   `migrateExport` 打包时**跟随 symlink**，把记忆根之外的文件内容打进导出包（实测复现：
+//   根内 `outside.md` → 根外机密，旧实现下 `pack.files` 出现 `outside.md` 且带根外正文）。
+//   修法：打包边界改用 lib/file-boundary.js 的 `fileWithinRoots`（组件级物理边界，**本仓判据单一来源**），
+//   并**读被校验过的物理路径**；目录侧 `allowMissing:false`、文件侧 `strict:true`，越界条目拒绝并计入 `skipped`
+//   （不静默丢）。用户级 `CALENDAR.md` 同样收在用户根的物理边界内。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由，仅函数体语义修正）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 2757E6FC00782277 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写。）
+// ★2026-10-08 L-E 重钉（R92 → R93）：lib/index.js **有意演进** —— #261（OBS-02）定时固化/维护的失败可观测性：
+//   旧实现「**开始就写当日 Done 标记** + `catch(() => {})` 空吞」⇒ 一次失败即占住当日名额：
+//   用户既看不到失败（无诊断回执），也没有任何补救机会（当日 tick 恒被 Done 挡住；tickTime 每 15s 一次）。
+//   修法：改为「**成功才写 Done**」，新增模块级有界重试台账（上限 3 次、最小间隔 60s），
+//   失败写类型化诊断回执（只留 `type=`/`code=`，不放 message/stack/路径），并新增只读投影
+//   `debugInfo().associativeMemory.schedule`（计数/时间戳/安全错误码，最小投影纪律）。
+//   ★间隔为何必需：触发窗口 `hhmm === 计划时刻` **只有 1 分钟宽**；若只限次数不限间隔，
+//     3 次额度会在 ~45s 内烧光（tick 15s）⇒ 一次瞬时故障丢掉整天。故重试跨出该分钟继续，并强制 ≥60s。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由，仅调度段与投影追加）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   ★同日 L-E 追加（R93 内二次重钉，非新 R）：R93 首落后又并入 **autoSummary 第三实例**
+//     （同型调度根因：标记先写 + 被调方空 `catch` ⇒ 失败无回执、当日不再跑；且相比固化/维护
+//     **零人工工具入口**，故更彻底），投影相应扩出 `schedule.autoSummary` ⇒ 锁值按最终字节更新。
+//   （重钉值 6BAF2F63C7517E17 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写；
+//     另以独立探针同表达式复算同值，两处口径一致。）
+// ★2026-10-08 L-A3 重钉（R93 → R94）：lib/index.js **有意演进** —— 批 A-1 后端接续判据两条：
+//   ①#285（前后端资格判据不同源）：硬信号可 arm，但前端确认卡按普通比例门过滤 ⇒ 已 armed 却无入口。
+//     本道只做**后端协议透出**：`st.armed` 补 `hard` / `hardReason` / `hardAt`（原因取自既有信号
+//     `state.waterLevelHardTrigger`，并**同时落到 runtime 快照** `rt.waterLevelHardTrigger` —— 因为 arm 的
+//     两条调用路径都从 runtime 读整份快照，而 state 是全局单值、跨会话可能被覆盖），
+//     `autoContinueState` 的 armed 投影一并带出。非硬信号路径 `hard=false` ⇒ 前端仍走原比例门（行为不变）。
+//   ②#286（忙闲判据用跨会话 30s 全局活动窗）：`awaitIdle` 原读 `_globalLastActiveAt`（任意会话活动即刷新）
+//     ⇒ 静默 35s 的长工具被误判空闲、源回合被 cancel；且**其它会话的活动反而挡住本会话**。
+//     现改读宿主**按会话**权威状态 `ctx.agents.get(sid).status`（`AgentStatus = 'idle' | 'running'`，
+//     见 @deepseek-ai/dsh-agent runtime-types.d.ts:90/147；与 restoreLastAgent 同一 `_agentSvc` 调用形态），
+//     取不到/非已知值 ⇒ unknown ⇒ **继续等待**（保守侧），保留 5 次×20s 有界封顶。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由，仅函数体语义修正）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 2070A07D0424D4B4 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写。）
+// ★2026-10-08 L-A4 重钉（R94 → R95）：lib/index.js **有意演进** —— 批 B #291 转写包文件名冲突：
+//   旧命名 `prev-session-` + `sid.slice(0,8)` + 秒级 HHMMSS + `.md` ⇒ 同工作区、同秒、前 8 字符相同的
+//   两个来源落到**同一路径**，后写**静默覆盖**前一份；先返回的 transcriptPath 仍指向该路径 ⇒
+//   新会话按第 3 层读到时读到的是**别的来源**的任务。
+//   收口：① 身份改 `sha256(sid)` 前 16 位 hex（64 bit，生日界远超实机会话量级，且不暴露原始 id）；
+//   ② 并入 `contSeq`（同源多次生成可区分 —— 为此把 `allocContSeq` 提前到 outPath 计算**之前**）；
+//   ③ stamp 由秒级 HHMMSS 改为 `replace(/[-:.TZ]/g,'')`（含日期 + 毫秒）；
+//   ④ 写入改 `{ encoding:'utf8', flag:'wx' }`（已存在即拒绝而非覆盖），EEXIST 明确 diag 不静默。
+//   命名三段均为 [\w-] ⇒ 仍匹配既有 lister 正则 `/^prev-session-[\w-]+\.md$/`（:4266），无需改正则。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由，仅函数体语义修正）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 2B0EBDD4B0B79166 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写。）
+// ★2026-10-08 L-A5 重钉（R95 → R96）：lib/index.js **有意演进** —— #302 长用户请求跨接续保全：
+//   缺陷：单条用户消息 > PER_MSG(2000) 被 slimTranscriptPre 截断，且第 2 层近期线程用的是**同一份已截断**的
+//   msgs（`m.text.slice(0,700)`）⇒ 目标位于 2,000 之后的请求在**所有层**都拿不到，却报告接续成功。
+//   收口（按已批准契约 docs/internal/DESIGN-20261008-CONTINUE-USER-REQUEST-PRESERVATION.md）：
+//   ① 新增 handoffDir/prev-req-<sha256(sid)16hex>-<stamp17>-s<contSeq>.md（与 #291 转写**同族**：
+//      复用同一次已预留 contSeq、同一份 stamp、同一 sha256 身份段）；**不用** prev-session- 前缀
+//      ⇒ 不落进 /^prev-session-[\w-]+\.md$/，不挤占 8 篇转写配额、不污染账本/白板血缘；
+//   ② **仅当**存在 role==='user' && text.length > PER_MSG 的消息才写（短请求零影响、carry 逐字节不变）；
+//   ③ 写入 `{flag:'wx'}` 拒绝覆盖；上限 512 KB（保留最新、从旧到新省略并如实标注条数与字符数）；
+//   ④ **写失败必须中止本次接续**：与转写写失败同一套 catch 语义（同一份 rollback + 高水位不回退），
+//      并用既有 `stateError()` 工厂（lib/continuation-state.js:13）标记 statePersistence 以穿透两处 fail-soft catch。
+//      顺序安全性：hostAutoContinue 先 `await buildContinueCarry`(:5396)、后才 `sc.cancel`(:5415)。
+//   ⑤ 读取路径入**永不截断**的 navParts（assembleCarryPre 契约），紧跟转写路径一行。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由，仅函数体语义修正）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 DE327ACEBA2D8C58 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写。）
+// ★2026-10-08 L-A6 重钉（R96 → R97）：lib/index.js **有意演进** —— 批 D #290 模型继承失败静默降级：
+//   旧实现 `try { await sc.selectModel(...) } catch (eM) { diag(...) }` 只 diag（异常被吞），
+//   且 `st.lastOk.model` / 返回体**无条件复制请求值** d.model ⇒ 实测「delivered=宿主默认，reported=源模型」、
+//   error 空、completed=true（用户以为模型沿用了，实际没有，且无任何可观测迹象）。
+//   用户裁定（2026-10-08）：**允许降级，但必须如实标注**（依据：停旧回合 sc.cancel :5415 先于模型继承
+//   :5492 ⇒「继承失败即拒绝投递」会把用户晾在「旧回合已停、新会话未投递」的半路状态）。
+//   收口：① 失败留痕 modelDegraded/modelDegradeReason（取 code 优先）；② 回执改报**已确认的实际模型**
+//      （复用既有范式 agentForSessionId → sessionEventsOf → findSessionModelPre 真读回会话日志），
+//      读不回来 ⇒ model:'' + modelConfirmed:false（**不用请求值冒充**）；③ 保留 modelRequested 供前端说明原请求。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由，仅函数体语义修正）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 3129DD367094B658 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写。）
+// ★2026-10-08 L-A9 重钉（R98 → R99）：lib/index.js **有意演进** —— 「如实标注」全覆盖（补批 D 可见性缺口）：
+//   缺口：批 D 只在 `selectModel` **抛错**时留痕；而条件是「三与」`d.provider && d.model && typeof sc.selectModel`，
+//   不成立时整段被跳过 ⇒ `modelDegraded` 不设、`modelRequested` 空串 ⇒ 前端两条标注分支都不触发 ⇒
+//   用户看到「✓ 已自动接续」却不知道模型没沿用（L-A8 负路径实测挖出）。
+//   收口：把「继承**未能进行**」也按降级如实标注，原因码分开 —— `source-model-unknown`（源会话无模型信息，
+//     属合法情形，只标注不拒绝）/ `selectModel-unavailable`（宿主老版本无 selectModel，论证：对用户的客观
+//     结果同样是跑在宿主默认模型上，故**也算降级**）；返回体补 `modelRequested`（批 D 只放进了 lastOk）。
+//   ★纯补可见性：不触碰任何判定/开关/流程（是否调用 selectModel、是否建会话、是否投递全部原样）。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由，仅函数体语义修正）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 3B746E839FC79413 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写。）
+// ★2026-10-08 #304/#305 重钉（R93 → R94）：lib/index.js **有意演进**（并发一致性家族修复）：
+//   · #304：maintain 的「读源 → 双摘要校验 → 删除」整段进入**跨进程物理路径文档锁**
+//     （新增 _withDocumentLockPre 助手；与 MemoryDocumentStore 的写事务锁同名同路径 `file + '.lock'` ⇒ 追加插不进该窗口）；
+//   · #305：新增 mutation flight 的登记/有界 drain（迁移前等待**普通写通道**落盘），
+//     并在提交边界复核持久配置根未变（变了 ⇒ 409 SETTINGS_ROOT_CHANGED，不再静默成功落旧根）。
+//   判据守恒：路由数不变、依赖面不变（未新增/删除路由）；E3 仍锁「归一化 LF 后 sha256 前 16 位大写」这一基线常量，
+//   仅按**本套件自身表达式**复算后的新字节值重钉（2026-10-01 裁定：判据随有意演进上移，不回滚成果）。
+//   （重钉值 93178A3940DE9796 由本文件第 23 行 IX 的 sha256 前 16 位大写复算得出；IX 实测 966,870 字符。）
+// ★2026-10-12 判据重钉（#335 第二批，判据过期非缺陷）：本轮又**有意改动 lib/index.js 三处** ——
+//   ① procedure-store.js 新增 update() 原语（仅内容字段可改，身份/生命周期字段拒绝）；
+//   ② 宿主 memory_procedure 工具接 action=update（enum + procedureId 参数 + update 分支 + 两个 id 解析助手）；
+//   ③ 尾部铭文（snapshotInscription）补 action=update/activate 提示（服务端/客户端镜像逐字一致）。
+//   判据意图不变（宿主哈希不得无痕漂移），以本套件自身剥离表达式复算后重钉
+//   FE0DB6F7A53DD185 → **6D2FF5503FD177DA**（982318 字符）。
+// ★2026-10-12 判据重钉（#335，判据过期非缺陷）：本批有意改动 lib/index.js 一处 ——
+//   DEFAULT_CONFIG 新增两键（settingsEntryInDsSettings / settingsEntryInPluginsPage，均默认 true），
+//   供「设置入口是否暴露在 DSH 设置页 / 插件页」开关使用（用户裁定「都放 + 可关」）。
+//   写入侧自动放行（POST /config 白名单 = Object.keys(DEFAULT_CONFIG)），故无路由/依赖面变化（E4 路由数 71 不变）。
+//   判据意图不变（宿主哈希不得无痕漂移），按 2026-10-01 裁定以本套件自身剥离表达式复算后重钉
+//   EB27EB035A20E385 → **FE0DB6F7A53DD185**（977,082 字符）。
+// ★2026-10-10 判据重钉（#330，判据过期非缺陷）：本批有意改动 lib/index.js 四处 ——
+//   ① resolveAgent 错误码带出（`resolveError`）；② 同意门覆盖 host-conflict（writer-held）；
+//   ③ workbench.json 写入宿主身份；④ 心跳改记全部实例。判据意图不变，按 2026-10-01 裁定以
+//   **本套件自身表达式**复算后重钉 93178A3940DE9796 → 47701D38BD436B02 → **DF95A88C2D6F749C**。
+// ★2026-10-09 判据重钉（round-2，判据过期非缺陷）：本批有意改动 lib/index.js 两处 ——
+//   · #319 归档发布段接入 `_withDocumentLockPre`（多一层缩进 + 注释）；
+//   · #320 迁移 drain 未收敛改 fail-closed（抛 SETTINGS_MIGRATION_PENDING_WRITES，不再只记 diag）。
+//   二者都是「宿主有意演进」，E3 的**判据意图不变**（宿主哈希不得无痕漂移），按本仓 2026-10-01 裁定
+//   「判据过期改判据、不回滚成果」重钉常量。重钉值由**本套件自身的剥离表达式**（第 23 行 IX 的
+//   `replace(/\\r\\n/g,'\\n')` 后 sha256 前 16 位大写）复算得出，未手工拼装。
+// 2026-10-14 R110: 吸收 PR#420 落盘后，宿主 lib/index.js **有意演进** —— 逐块移植社区修复进开发树；
+//   并在其中补一个真实缺陷（createOnly 命中已存在文件时什么都不写，却清空 engine._jsConfigurationError ⇒
+//   凭空抹掉真实配置错误；现改为未写时返回 __unchangedByCreateOnly、调用点据此才清），
+//   同时把 ok 诊断行恢复为含 created=/emit=/policy=（对齐 #421 报障者引用的证据口径）。
+//   判据意图不变（宿主哈希不得无痕漂移），按本仓 2026-10-01 裁定以**本套件自身表达式**复算后重钉：
+//   DE3AFB3747F0F1BC → 3C375E3D8D9E34BD（1,019,370 字符，IX = lib/index.js 归一化 LF）。
+// 2026-10-14 R109: reviewed scoped host fixes for #359-#419; full source-byte lock retained.
+// PR420: reviewed calendar identity, recall selector/source projection and bounded interpreter preparation.
+// 2026-10-15: four settings fixes change live store wiring and effective embedding configuration; retain the exact source lock.
+// 2026-10-17 R111: A01–A24 修复批（23 条 issue / 11 批 / 前后端同批）。lib/index.js **有意演进** ——
+//   新增的接线全在「既有函数体内补判据或补回执」，无新路由（E4 路由数守恒仍 = 73）：
+//   #425 迁移导入祖先物理归属（copyDir 第3参 + 写入链两验 + userFiles 边界）、#431/#432 Tier-0 目录双闸、
+//   #433 注入段字符记账、#434 白板卡 id 唯一性落盘闸、#435 repair 后语料缓存失效钩子、#437 vectors 就绪判定、
+//   #440 蒸馏成功分支容量门、#441 reset 落盘失败 500、#442 外部源代次+消费面过滤（含 listAllPre）、
+//   #423 团队 GET 读权、#426 activate 批准不变量与 hub 回执、#424 弃用后 SKILL.md 退休、
+//   #422 Python 健康缓存过期发布。判据意图不变（宿主哈希不得无痕漂移），按 2026-10-01 裁定以
+//   **本套件自身表达式**（第 23 行 IX 的 sha256 前 16 位大写）复算后重钉：
+//   5CADFA670222D5F0 → DB20F1C83B625138（1,042,402 字符；改前 1,019,404 ⇒ 净 +22,998）。
+//   ★2026-10-18 R114 重钉（DB20F1C83B625138 → 4BFB80682552BBB1，**等长**替换，文件仍 1,064,352 字符）：
+//   本批为用户报「所有上下文注入都没用了」的归因修复，lib/index.js 改动共 3 处：
+//     ① 节流分支 `return engine.renderReflectionRequest()`（空串）→ `return slimText + ...`：
+//        三处，消除「节流帧整面为空 ⇒ 被宿主 .filter(text.length>0) 丢弃 ⇒ 零注入」。
+//        顺序为等长改写（原 3 处 return 各有对应新 return，注释净增被等长替换抵消）。
+//     ② 语义：节流仍生效（不调 markSlimEmitPre/countTieredSlim）⇒ fullEverySlims 口径不变。
+//   判据意图不变（宿主 index.js 不得无痕漂移），本批属**有意演进**，按 2026-10-01 裁定
+//   以本套件自身表达式复算重钉。取证：node --check OK / INDEX-IMPORT-OK / exports 38 守恒。
+//   ★2026-10-18 R125 重钉（AA7F4B3C5E6ECDEA → ED4E086654ED922F）：修「真人说话但注入被覆盖」——
+//     同 step 保真判据由「快照逐字节相等」改为「本 step 已授予过即保真」。
+//     根因：宿主同一模型请求内多次调用 text() 且只投影最后一次；两次之间快照常微变
+//     ⇒ 旧判据失配 ⇒ 落到节流分支返回精简版 ⇒ 覆盖掉刚授予的完整版。
+//     生产实测 09:14:28 先「完整版（human:11636）」、0.1s 后「精简版被节流」；
+//     会话转录核对：连续 6 条真人消息之前零注入。
+//     判据意图不变，按本仓 2026-10-01 裁定复算重钉。
+//   ★2026-10-18 R123 同批再重钉（CC76A49BE9CEDC1D → AA7F4B3C5E6ECDEA，净 +409 字符）：
+//   修**日志描述**缺陷（不影响任何门控）：完整版授予分支里 `_lastFullStepSeq = stepSeqNow` 先于
+//   diag 执行，而 diag 又从该字段读回算差值 ⇒ 恒减出 0。实测生产日志全是
+//   「距上次完整版 0 个模型请求 / 门槛 10」，即使真实间隔是 10 轮 —— 直接误导排障（本轮排查踩过）。
+//   修法：覆写前先算 _gapSinceFull，diag 改读它。真执行验证：现输出 1 / 10 / 10（间隔真实）。
+//   判据意图不变，按本仓 2026-10-01 裁定复算重钉。
+//   ★2026-10-18 R122 重钉（08D649F6FD37BF78 → CC76A49BE9CEDC1D，文件 1,065,520 → 1,058,802 字符，净 −6,718）：
+//   用户报「上下文注入功能失效」，取证后**根因在宿主 0.2.1 API 换代**：
+//     决策段两处 step 键解析写成 `Array.isArray(a.session.events) ? a.session.events : null`，
+//     而宿主 0.2.1 的 Session 已无 `.events` 成员（只有 `snapshotEvents()`）⇒ evs 恒 null
+//     ⇒ 取不到 step 号 ⇒ stepKeyTop 恒空串 ⇒ `_stepSeq` 永不推进（实测 undefined）
+//     ⇒ 完整版间隔判定退化，节奏失控。
+//   修法：两处读者改为「`.events` 优先，其次 `snapshotEvents()`」，与模块级 sessionEventsOf 同口径。
+//   验收（真执行生产代码段，非静态断言）：修复前 _stepSeq=undefined、25 个模型请求全给完整版；
+//     修复后 _stepSeq=25、完整版精确落在第 1/11/21 个（间隔恰 10）。变异验证：还原旧代码 ⇒ 必红。
+//   判据意图不变（宿主 index.js 不得无痕漂移），属**有意演进**，按本仓 2026-10-01 裁定复算重钉。
+//   ★归因：HEAD 版本用本套件自身表达式复算 = 08D649F6FD37BF78（与旧锁逐字节相等），
+//     证明本次漂移 100% 来自本批修改，无历史漂移混入。
+//   配套：lib/client.js 同批改文案 ⇒ iter5-skin / settings-archive-interval 两锁同步重钉。
+//   ★2026-10-18 R116 重钉（4BFB80682552BBB1 → 08D649F6FD37BF78，文件 1,064,352 → 1,065,520 字符，净 +1,168）：
+//   修「人说话不给完整版」—— 未授予时不得登记授予去重键。改动点：
+//     · index.js 16939-16950：`if (firstOfTurn) _humanFullKey = turnKey`（原 16934）
+//       改为 `if (firstOfTurn) _tieredSeenTurnKey = turnKey`，并附完整归因注释块。
+//     根因：宿主固定序 turn/start → step/start(首帧渲染) → user/message ⇒ 首帧 isHuman=false
+//       不授予（正确），但旧代码仍写 _humanFullKey ⇒ 真人消息落地时 _upgradeFromFallback=true
+//       ⇒ firstOfTurn=false ⇒ 授予被吞。实测复现：帧1=FULL 帧2=SLIM(被吞) 帧3=SLIM。
+//   判据意图不变（宿主 index.js 不得无痕漂移），属**有意演进**，按 2026-10-01 裁定复算重钉。
+//   配套：smoke-test-inj3-same-turn-dedup T1 期望 FSS → FFS（同批，含归因）。
+// ★2026-10-19 重钉（D9362D96… → 2EE473FB…）：本轮在 lib/index.js 的 memory_procedure 工具内新增
+//   技能库**机械查重闸门**（proceduresNormalizePre / proceduresFindDuplicatePre / legitMergePre 放行判定 +
+//   拒绝回执文案），属**行为代码新增**（非文案漂移）；判据意图不变（宿主 index.js 不得无痕漂移）。
+//   ★归因（实测复算）：改前 HEAD 4a2ffd8 的 lib/index.js 按本套件自身归一（CRLF→LF）复算 = D9362D96…（与旧锁逐字节相等）；
+//   本轮改后复算 = 2EE473FB… ⇒ 漂移全部来自本批新代码，无历史内容混入。
+// ★2026-10-19 R124 重钉（CACF2298F6B24C75 → 2CB9C82142ACB217）：issue #451 代理压缩适配批，属**行为代码新增**——
+//   ① lib/index.js 新增配置键 waterLevelProxyCompat（DEFAULT_CONFIG 155→156，白名单=Object.keys 自动放行）；
+//   ② checkWaterLevel 的 tokenMeter 分支新增四闸兜底（探测代理插件 → 用 provider 真实 usage 换分子）；
+//   ③ 新增 `_proxyCompatProbeNow` / `_proxyCompatView` 两个方法与 debugInfo 的 proxyCompaction 投影；
+//   ④ state 暴露 waterLevelProxyCompat*，water record 加 meterViaProxy/estimatedTokens/realUsageTokens，
+//      并**在 handoff-state 的两条投影里都透出**（重启后实测发现的半修：只写记录、两条投影都不读 ⇒ 面板看不到）；
+//   ★归因（实测复算）：本批开工基线 HEAD 865a1af 的 lib/index.js 按本套件自身归一（CRLF→LF）= 1,099,940 字符 / CACF2298F6B24C75（与旧锁逐字节相等）；
+//   本批改后 = 1,106,459 字符 / 55A407E3CFD09ED5（含上述投影补线 + debugInfo fail-soft）⇒ 漂移全部来自本批新代码，无历史内容混入。
+//   判据意图不变（宿主 index.js 不得无痕漂移），按 2026-10-01 裁定复算重钉。
+eq(createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase(), 'FAA74739CB711060', 'R129 = R128 + 2026-10-23 #456 自动沉淀每日额度落盘（① 新增 autoCallStatePath / _loadAutoCallState / _saveAutoCallState 三个方法，状态落 ~/.dsh/memory/auto-consolidate-state.json，构造期加载、累加后原子写；② 额度判定前 _autoCallDate 对齐 today；③ 跨日/损坏/脏值/缺字段一律**显式归零**（不依赖调用方内存恰为 0）；④ DEFAULT_CONFIG 的 autoConsolidateDailyMax 注释按实际行为改写，删掉从未实现的「跨插件实例应只保留一个实例」承诺）。★归因（实测复算）：本批开工基线 HEAD=ef581df 的 lib/index.js 按本套件自身归一（CRLF→LF）= 1,121,051 字符 / A2BEE30B66EC2E8A（与旧锁逐字节相等）；本批改后 = 1,124,663 字符 / FAA74739CB711060（Δ +3,612 字符，全部为本批新增方法与注释）⇒ 漂移全部来自本批新代码，无历史内容混入。判据意图不变（宿主 index.js 不得无痕漂移），按 2026-10-01 裁定复算重钉。前序 R128 = R127 + 2026-10-22 复核修正（① 403 hint 原写「或在插件设置里填 panelAllowedHosts」是**假承诺**——前端设置页 108 个可写键里没有该键、源码 0 处引用，改用「环境变量 或 改 ~/.dsh/dsh-auto-memory.json 后重启」；② 配置键注释同步标注「GUI 暂未提供该输入框」；③ #454 套件 A7 原有一条 `... || true` **恒真断言**（等于没测），改为真判据「403 体不得回显白名单条目 + 只告知条数」，并已变异验证（让 payload 泄漏白名单 ⇒ 该断言必红）。判据意图不变（宿主 index.js 不得无痕漂移），按 2026-10-01 裁定复算重钉 589C40418B618452 → A2BEE30B66EC2E8A（1,121,051 字符，IX = lib/index.js 归一化 LF）。前序 R127 = R126 + 2026-10-22 #454 面板 LAN/远程部署放行 + #453 技能查重面扩展（① isLoopbackRequest 由「回环且 Host=localhost」两条硬判据扩为两档，回环档行为逐字节不变；② 新增 isLoopbackAddressPre / isPrivateAddressPre / parseAllowedHostsPre / hostAllowedPre 四个纯函数与 forbiddenPanelPayloadPre 诊断体；③ 73 处守卫统一改调 (req, panelAllowedHosts)，在 apply 内解析一次；④ DEFAULT_CONFIG 新增 panelAllowedHosts（159→160）；⑤ #453 查重面扩至磁盘技能目录 listLocalSkillsPre + memory_procedure_list 折叠低质量观察行）。判据意图不变（宿主 index.js 不得无痕漂移），按 2026-10-01 裁定复算重钉 D5FCCE5AD0F8F783 → 589C40418B618452（1,120,902 字符，IX = lib/index.js 归一化 LF）。前序 E3 ★宿主 lib/index.js 基线守恒（R126 = R125 + 2026-10-21 v3.3.14 接续刷新仪式超时可配：①两个默认值抽成模块级常量（DEFAULT_AUTO_CONTINUE_REFRESH_TIMEOUT_SECONDS=120、DEFAULT_AUTO_CONTINUE_PROBE_TIMEOUT_SECONDS=60）并全站引用；②总超时默认 90→120 秒、允许区间 15–600→15–900，越界回落常量；③单次 probe 上限由写死 Math.min(30000,…) 改为读 autoContinueProbeTimeoutSeconds（默认 60、允许 10–300），仍与剩余预算取 min。判据意图不变（宿主 index.js 不得无痕漂移），按 2026-10-01 裁定复算重钉 F84BC89E250F4CF6 → D5FCCE5AD0F8F783（1,109,579 字符，IX = lib/index.js 归一化 LF）。旧：R125 = R124 + 2026-10-21 v3.3.13 补 issue #451 遗留「半修」：handoff-state 的 else 分支（有 sessionId 但该会话尚无水位记录）补 meterViaProxy / estimatedTokens / realUsageTokens 三字段——三个 water 构造点里它是唯一漏掉的那个，调用方走到该分支即拿到 undefined。判据意图不变（宿主 index.js 不得无痕漂移），按 2026-10-01 裁定复算重钉 72C0DA04FD52F988 → F84BC89E250F4CF6（1,108,534 字符，IX = lib/index.js 归一化 LF）。旧：R124 = R123 + 2026-10-21 团队同步活锁/幂等根治（①team-sync 推送体补 idemKey，复用 outbox 已持久化的 eventId，缺失回退 kind|key；②team-pull 游标接受字符串/数字双形状（normalizeCursorPre），游标落盘（注入 loadCursor/saveCursor 到 ~/.dsh/memory/team/pull-cursor.json），no-applier 按「是否本次请求的 kind」分流以解活锁（#364 语义保留），请求带 limit 分页；③team-auth 响应体 32MB 硬上限（content-length 预检 + 实测兜底，超限回 response-too-large）；④新增配置键 teamPushPath / teamPullPageLimit（DEFAULT_CONFIG 156→158）；⑤teamPushPath 可覆盖上行端点，默认值不变保证已按旧名实现的服务端零影响）。判据意图不变（宿主 index.js 不得无痕漂移），按 2026-10-01 裁定复算重钉 55A407E3CFD09ED5 → 72C0DA04FD52F988（1,108,249 字符，IX = lib/index.js 归一化 LF）。旧：R123 = R122 + 2026-10-19 Python 语义侧车静默残废根治（含②b：配置为路径型且文件不存在时回落**已验证**解释器，不回裸 python）（①删除裸 python 兜底：resolveCommand 验证闸 + fail-closed interpreter-unverified；②配置值权威、无 embedding 配置时不做 fail-closed；③探测预算 8000→20000 且命中即停、单候选 3000→8000；④长驻进程 health 巡检（区分短命探针）+ stderr 增量落盘 + debug.interpreter/health；⑤ctx-host 诊断日志 2MB 轮转；⑥dispose 清 health 定时器）。判据意图不变（宿主 index.js 不得无痕漂移），按 2026-10-01 裁定复算重钉 2EE473FBE6C9C926 → CACF2298F6B24C75（1,099,940 字符，IX = lib/index.js 归一化 LF）；原 R122 = R121 + 2026-10-18 注入交付层根治：①补 _humanDone 定义（原为未定义变量，每帧抛 ReferenceError 被空 catch 吞掉，致幂等闸与真人旁路整段失效）；②请求键改用 requestIdPre（最近一次 step/end 的 seq，两帧恒定）；③精简版补「记忆维护底线」段；④完整版节奏按 step 计数；⑤授予时推进精简基线。判据意图不变（宿主 index.js 不得无痕漂移），按 2026-10-01 裁定复算重钉。旧：R121 = R120 + 2026-10-18 重启后实测修正 indexReady 兜底判据：原兜底读 `jsSemantic.indexedRecords`，但本机语义引擎是 **Python 档** ⇒ JS 侧恒 0、兜底永不命中（实测 indexReady 仍 false）。改为优先读索引宿主的 `_readyCacheForTest` / `debugView().ready`（`ensureIndexReady` 成功后才写入的真实就绪信号），JS 记录数降为最后兜底。P2 三条不变量不变。判据意图不变，按本套件自身表达式复算重钉 C1FF012BED2583D9 → 08D649F6FD37BF78。；R120 = R119 + 2026-10-18 DSH 0.2.1 宿主 API 换代适配：①`subagents.start()`→`startActivation()`（实测 SubagentRuntime 公开方法仅 startActivation/waitForChildren/sendMessage/interrupt/drainDescendants，旧 start 已不存在），新增 `callSubagentStartPre` 适配层统一新旧两代并把返回值归一成旧 run 形状，两处调用点改走它；②`indexReady` 此前唯一依赖引擎切换状态机 phase/published ⇒ 从未切换过引擎的安装恒为 false（实测 phase=idle/startedAt=0 但 fv2 ncand=8 索引可用），改为「状态机为主 + 仅在从未开代时用静态可用性兜底」，并保留 P2 不变量（发布前恒 false / requiresFullRebuild 否决 / failed·cancelled 不冒充就绪）；③陈旧 error 在 idle/ready 时摘入 staleError。判据意图不变，按本套件自身表达式复算重钉 E2BADAC386196CEB → C1FF012BED2583D9。；R119 = R118 + 2026-10-18 注入节奏口径改为「模型请求」（step）：`_turnSeq`→`_stepSeq`、`_lastFullTurnSeq`→`_lastFullStepSeq`、`_lastSlimTurnSeq`→`_lastSlimStepSeq`，阈值 `fullGapTurn`→`fullGapStep`/`slimGapTurn`→`slimGapStep`，授予条件去掉 `firstOfTurn` 改为按 step 间隔（修复「单 turn 内只在首帧给一次完整版」）。判据意图不变，按本套件自身表达式复算重钉 B0BE97D0C0ED065A → C1FF012BED2583D9。；R110 = R109 + 2026-10-14 吸收 PR#420（逐块移植）+ createOnly 假清错误标记修复 + ok 诊断行恢复 created=/emit=/policy=：判据意图不变，以本套件自身表达式复算重钉 DE3AFB3747F0F1BC → 3C375E3D8D9E34BD（1,019,370 字符）；R108 = R107 + 2026-10-13 #356 补诊断留痕（用户现场：开关报「保存失败」但盘上**零痕迹**，支持端无从判定引擎档/文件在否/失败在何步）：semantic-emit 端点此前失败路径**只回 HTTP 500、不落任何日志**，现将四个分支各补一条 diag()（cfg present/MISSING、CORRUPT kept-as-is、SHAPE-INVALID、WRITE-FAILED、ok、catch 兜底），且**不改变控制流**（fail-soft）；损坏分支回退为 `throw cfgReadErr` 与批次 Z 逐字等价。判据意图不变，以本套件自身表达式复算重钉 B23ADD5DC7A794A1 → AF5D50DF769E78FE（1,001,900 字符）。；R107 = R106 + 2026-10-13 #356 下载完成即补建引擎配置（治「模型刚下好、尚未重开面板」窗口内开关仍失败）：createSemanticDownloaderPre 全文件 0 处 embedding-config ⇒ 只装 JS 档的新用户在下完那一刻配置仍缺；现将 downloader.start 包一层完成轮询，phase 落 done 且配置不存在时按与端点同源的身份四键原子补建（已存在则绝不覆盖）。判据意图不变，本批属**有意演进**，按 2026-10-01 裁定以本套件自身表达式复算重钉 2C73196B2946E71F → B23ADD5DC7A794A1（1,000,537 字符）。；R106 = R105 + 2026-10-13 #356 只装 JS 引擎的开关不可用修复：semantic-emit 端点区分 ENOENT 与「损坏」——缺失时按引擎身份常量首建配置（provider/dimension 取自 JS_E5_IDENTITY_DESC_PRE_V1，模型路径由 dshHome 推导），仅真解析失败才原样保留并失败。判据意图不变（宿主哈希不得无痕漂移），本批为**有意演进**，按本仓 2026-10-01 裁定以本套件自身表达式复算后重钉 98B94865DECB516A → 2C73196B2946E71F（1,017,080 字符）；R105 = R103 + 2026-10-13 注入节奏两处修复：① 同轮重复授予完整版（turnKey 在 tk↔human:<seq> 间翻转致 firstOfTurn 二次为真）改为「键降级不重复」精判据；② gap 计数器 _snapRound 由「按注入次数」改为「按 turn 推进」以对齐 snapshotMinGapRounds 的轮语义）← R103 = R102 + 2026-10-13 17 条 issue 修复批（#337-#353）← R101 = R100 + 2026-10-13 #333②（归档取回通道：maintain 不再回灌全文、只写指针；新增 memory_read(kind="archive") 与 memory_recall(scope="archive")；尾部铭文 +⑦ 层，客户端镜像同步 +1 层）← R100 = R99 + 2026-10-12 #335 第三批（尾部铭文 snapshotInscription 双端镜像补「技能库分工作区库/通用库 + 写接口无 scope 恒入通用库 + list 可看属哪个库/为何未晋升」，长度 1244，守卫上限 1200→1400）← R99 = R98 + 2026-10-12 #335 第二批（memory_procedure 新增 action=update：procedure-store 加 update() 原语 + 宿主工具接线与两个 id 解析助手 + 尾部铭文补 update/activate 提示）← R98 = R97 + 2026-10-12 #335（DEFAULT_CONFIG 新增 settingsEntryInDsSettings / settingsEntryInPluginsPage 两键：设置入口暴露开关；白名单=Object.keys(DEFAULT_CONFIG) 自动放行）← R97 = R96 + 2026-10-12 #331（会话扫描改结构识别，兼容 vN 命名）/ #333（主记忆写入容量门：维持档回灌、面板追加）/ 基线红灯修复（心跳实例身份耐 1ms 抖动）← R96 = R95 + 2026-10-10 #330 多宿主工作台会话争抢（resolveError 带出 + 同意门覆盖 host-conflict + 状态/心跳记宿主身份）← R95 = R94 + 2026-10-09 round-2 #319/#320 残留修复（归档发布进文档锁 + 迁移 drain fail-closed）← R94 = R93 + 2026-10-08 #304/#305 并发一致性（maintain 删除进跨进程文档锁 + mutation flight 登记/有界 drain + 提交边界复核持久根） 2026-10-08 L-E #261（OBS-02）定时固化/维护/时段总结失败可观测性（成功才写 Done + 有界重试 + 诊断回执 + schedule 只读投影；含 autoSummary 第三实例）；原 R92 = R91 + 2026-10-08 L-A2 #259 SEC-03 迁移导出物理边界；原 R91 = R90 + #280 A4/B 维护归档（源/归档双摘要 + 校验通过才删源 + 归档发布进 mutation 事务）） ；原 R90 = R89 + 2026-10-08 P1 #281 孤立代理修复（三个截断函数加代理对安全切点）；原 R89 = R88 + 2026-10-08 C 类 #254（方案 B\' 缩进续行：parseCalendar 续行识别 + renderCalendar 续行输出 + migrate-pack 孪生同口径））；原 R80 = R79 + 2026-10-06 #226 改法A（异常监听具名化 + 卸载 removeListener + 复位两个 guard 标志）＝ R79 = R78 + 2026-10-05 批次 Z（PR#213「Fix seven residual data-safety and ownership issues」后端拆取）：X1 删除 CAS（deleteMemory 对实际 buf 无条件 sha256 CAS，冲突 conflict-external-edit）；X2 note 绑定服务端（/note 路由 sessionId+expectedNotesPath 必填 + resolvePathsForSession + 409 漂移 + 读盘去重 + 缓存按归属更新）；X3 JSON 路径重写（rewriteJsonPathsPre token 级重写，.json/.jsonl 分派）；X4 procedure 证据五子项（owner 双归属限定 + 先持久化后统计 + success-exclusion + procedureWorkspaceRef=canonicalize 不引入 workspace-key.js（#179 领地）+ normalizeSessions 统一哈希身份 + loadEvents strict（30s 指纹缓存，读失败不缓存，display 保持容忍））；X5 导入安全（全量占用名清单 + target-inspection-failed fail closed + token 全覆盖 + commit 前 lstat/digest 复核 + additions 不用 link() 改 lstat 空闲确认+原子写 + 逐文件 withCalendarLock + backup randomUUID 防同秒撞名）。；原 R77 = R76 + 2026-10-05 批次 W（PR#210「Make continuation and archive state durable (#207)」拆取采纳）：①W1 cont-seq：allocContSeq 改跨进程共享锁内「重读→(仅 last≤0 时)冷扫→推进→原子提交→成功才发布」，写失败抛错不发号；冷扫放开 120 上限（leaf 读取失败跳过、目录级错误拒绝并指路、SQLite 维持拒绝+seed 指引）；rollbackContSeq 变 no-op（「不跳号」翻转为「允许空洞、永不回收」，2026-10-05 用户裁定）；锁模块与 calendar-lock 物理合一（calendar-lock.js 变薄壳 re-export）。②W2 接续闩分片：auto-continue-done.d/<SHA256>.json + token + 旧格式只读兼容 + (mtime,size) 读取缓存，删 200 条 slice 上限。③W3 pending/恢复：reserve→setTarget(rawId)→finish 三段持久化、autoContinueState 加 pending/completed、decideAutoContinue manual 与 hostAutoContinue(armed) 两入口 pending 拦截、恢复 CLI lib/continuation-maintenance.js（三重校验+.active 锁）。④W4 归档账本 delta：saveArchiveLedger(updates,removed) 锁内新鲜读→合并→原子写；sweep 删 _saLedger 缓存每轮新鲜读；归档分支账本提交失败 rep.ok=false+errors 外显+提前 return 跳过本轮删除。⑤W5 创建门：createSuccessor 包装 —— details.sessionId 存在即持久化原始 ID 不二建；仅类型化放行单（CONTINUE_CREATE_FALLBACK_ALLOWED_CODES）且 workspaceId 规范化精确匹配才放行源 cwd 回退，其余保留 pending。；原 R76 = R75 + 2026-10-05 工作台路径符号链接归一 + 新建熔断（见上方注释）；原 R75 = R74 + 2026-10-04 issue #211：新增 /python-setup/uninstall 路由 + python-setup 模块 uninstall()（删 <userDir>/python-engine 整目录）；原 R74 = R73 + 2026-10-03 批次 G：①#167/P0 [USER] 不直写全局（自动沉淀 + 做梦式固化两处同改，落 PENDING-USER-MEMORY.md）；②#167/P1 解析层确定性过滤（filterPointsPre，三档各一次）；③#207 三处裸写改按路径串行 + 原子写（cont-seq / 接续闩 / 归档账本），删自建第二套按文件链统一走 path-write-queue，归档账本读取改损坏隔离；④#207-4 新增 localWasmPaths 键 + worker wasm 路径本地化。前序 R73 = R72 + 2026-10-02 审计修复批 A+B 批：#182/#178/#205/#184 + #174/#185 团队接线（含 /team-control 路由、装配段 pull 定时器移位、_teamOutbox.load、真实卸载路径接团队 dispose）：①日历三写入口改锁内读盘+原子写，正则补 --:--；②compactLegacyLayer 归档提到护栏前且归档全部被移除段；③saveConfig 迁移补 mkdir+失败回滚+原子写。前序 R72 = R71 + 2026-10-01 接续开关默认开：DEFAULT_CONFIG.globalBriefEnabled false→true（用户裁定「把读取外部记忆的开关默认打开」）；前序 R71 = R70 + 2026-10-01 自写豁免接线 + 团队注入候选生产者：①_noteSelfWritePre 原为零调用点 ⇒ 挂到 4 个写盘原语（appendText/writeFullRaw/writeFullSingle/writeFull）⇒ 豁免真正生效；②_teamInjectCandidates 原只有 = [] 两次赋值、无生产者 ⇒ 把 pullOnce 的 appliedEntries 经 normalizeTeamSegmentsPre 喂入。前序 R70 = 记忆注入优化；原 R70 说明：（R70 + 2026-10-01 全局动态简报批：新增 lib/global-brief.js 纯模块 + 8 个 globalBrief* 配置键 + 精简版注入路径补 diag（用户要求可计量）+ 简报段并入注入主路径；前序 R70 = R69 + 记忆注入优化：精简版瘦身 + 完整版两档门槛 + 2 个配置键 + 2 层提示词；原 R69 说明：①规则编辑 GUI 路由按 expect 内容锚定防索引漂移 ②两处 _degradePre 死代码改接真实 _degradeSink ③sessions 兜底说明不再写死「39 个旧会话/descriptor v2」改为如实输出；归一化 LF 后计。前序 R68 = R67 + G 批发射闸单钥匙化；R63→R65 放行 = skinAssetRelOfPre/skinAbsPathOfPre 加 deep 参数（素材路由 ?deep=1 选暗色资源）+ #152 增量开关每轮取值 + #153 默认模型回退共用解析器（provider/实现名不再混用）+ #154 接续创建失败显式报错不丢源工作区 + 上述 3.2.5 全部修复保留，理由见上）')
+// ★2026-10-08 R1 重钉（R87 → R88）：lib/index.js **有意演进** —— R1 收口修 issue #174：
+//   #258 的发送出口包装（`engine._teamFetch = async (...) => ...`）是个**裸箭头函数**，
+//   把原 teamFetch 的属性面 `dispose/describe/readToken` 全部丢掉 ⇒ 卸载路径的
+//   `typeof engine._teamFetch.dispose === 'function'` 恒假、在途请求的 AbortController 永不
+//   abort（issue174 的 dispose 断言实测抓到）。改为把这三个属性从 rawFetch 搬到包装体上。
+//   判据守恒：路由数 71 不变、依赖面 {} 不变（未新增/删除路由）。
+//   守卫语义不变：仍锁「宿主 lib/index.js 归一化 LF 后的 sha256 前 16 位大写」这一基线常量，只更新被锁的字节值。
+//   （重钉值 70C221D02149DF15 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写。）
 // ★2026-09-28 计数演进：67→68（新增 skin-library-fetch，见 E3 同批）。语义保留：仍锁路由数不漂移。
-eq(cnt(IX, "path: API[") + cnt(IX, 'path: API.'), 71, 'E4 ★路由数守恒 = 71（2026-10-04 issue #211 /python-setup/uninstall +1；2026-09-28 皮肤库 +1；2026-10-01 /global-brief +1；2026-10-02 审计修复批 #174 /team-control +1；其余零新增）')
+eq(cnt(IX, "path: API[") + cnt(IX, 'path: API.'), 73, 'E4 ★路由数守恒 = 73（2026-10-04 issue #211 /python-setup/uninstall +1；2026-09-28 皮肤库 +1；2026-10-01 /global-brief +1；2026-10-02 审计修复批 #174 /team-control +1；其余零新增）')
 console.log('lib/client.js ' + Buffer.byteLength(SRC, 'utf8') + 'B / CRLF ' + (SRC.match(/\r\n/g) || []).length + ' / sha16 ' + createHash('sha256').update(SRC).digest('hex').slice(0, 16).toUpperCase())
 console.log('PASS ' + p + ' / FAIL ' + f)
 fails.forEach((x) => console.log('  FAIL: ' + x))

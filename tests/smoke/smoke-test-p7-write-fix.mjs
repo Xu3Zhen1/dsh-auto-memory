@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { withMemoryAdmissionScopePre } from '../../lib/memory-mutation-transaction.js'
 import { withCalendarLock, canonicalCalendarPath } from '../../lib/calendar-lock.js'
 import { writeTextAtomicPre } from '../../lib/config-io.js'
 import { readPlanPre, planRevisionPre, anchoredPlanPre, archivePlanPre, conflictPlanPre, preparePlanPre } from '../../lib/plan-store.js'
@@ -50,6 +51,12 @@ function makeFakeEngine() {
     // 本套件考的是**双标题剔除 / 老化分类**，不是门本身 ⇒ 恒过桩。
     // 门的真实行为由 `smoke-test-t0-8-mutation-gate.mjs` 专测。
     checkMutationPre() { return { ok: true } },
+    // ★R1（2026-10-08）判据/夹具同步（非回滚 · 依据 2026-10-01 裁定）：#258 给 writePlanSnapshot 加了
+    //   本地角色门 `this._assertTeamActionPre('edit-board')`；抽取式沙箱（new Function）的 this 没有
+    //   原型链 ⇒ 必须补桩，否则 TypeError → {ok:false} → 后续断言假红。
+    //   门的真实行为由 smoke-test-la-audit-fixes.mjs（真引擎 viewer 被拒）与
+    //   smoke-test-t0-8-mutation-gate.mjs 专测；本套件考的是归档/老化/幂等，不是门本身。
+    _assertTeamActionPre() {},
     wbWsKeyPre: () => 'test-ws',
     // P2 sidecar(2026-09-16)桩: 同 handoff-pre —— 抽取式沙箱的 this 上必须有该方法。
     async writeSidecarEntryPre() {},
@@ -61,8 +68,8 @@ function makeFakeEngine() {
   }
 }
 const bindMethod = (header, fake, extra) => {
-  const names = ['canonicalCalendarPath', 'withCalendarLock', 'writeTextAtomicPre', 'readPlanPre', 'planRevisionPre', 'anchoredPlanPre', 'archivePlanPre', 'conflictPlanPre', 'preparePlanPre', 'path', 'existsSync', 'mkdir', 'writeFile', 'readdir', 'stat', 'handoffStamp', 'nowHm']
-  const vals = [canonicalCalendarPath, withCalendarLock, writeTextAtomicPre, readPlanPre, planRevisionPre, anchoredPlanPre, archivePlanPre, conflictPlanPre, preparePlanPre, path, existsSync, mkdir, writeFile, readdir, stat, handoffStampFn, nowHmFn]
+  const names = ['withMemoryAdmissionScopePre', 'canonicalCalendarPath', 'withCalendarLock', 'writeTextAtomicPre', 'readPlanPre', 'planRevisionPre', 'anchoredPlanPre', 'archivePlanPre', 'conflictPlanPre', 'preparePlanPre', 'path', 'existsSync', 'mkdir', 'writeFile', 'readdir', 'stat', 'handoffStamp', 'nowHm']
+  const vals = [withMemoryAdmissionScopePre, canonicalCalendarPath, withCalendarLock, writeTextAtomicPre, readPlanPre, planRevisionPre, anchoredPlanPre, archivePlanPre, conflictPlanPre, preparePlanPre, path, existsSync, mkdir, writeFile, readdir, stat, handoffStampFn, nowHmFn]
   for (const k of Object.keys(extra || {})) { names.push(k); vals.push(extra[k]) }
   const obj = new Function(...names, 'return {' + extractFn(header) + '};')(...vals)
   return obj[Object.keys(obj)[0]].bind(fake)

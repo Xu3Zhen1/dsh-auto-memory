@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { withMemoryAdmissionScopePre } from '../../lib/memory-mutation-transaction.js'
 import { withCalendarLock, canonicalCalendarPath } from '../../lib/calendar-lock.js'
 import { writeTextAtomicPre } from '../../lib/config-io.js'
 import { readPlanPre, planRevisionPre, anchoredPlanPre, archivePlanPre, conflictPlanPre, preparePlanPre } from '../../lib/plan-store.js'
@@ -71,6 +72,12 @@ function makeFakeEngine() {
     // （门的行为由 `smoke-test-t0-8-mutation-gate.mjs` 专测；门在真实引擎上的接线由该套件的
     //  T0-8B「三条写入路径都不能绕过」断言锁）。
     checkMutationPre() { return { ok: true } },
+    // ★R1（2026-10-08）判据/夹具同步（非回滚 · 依据 2026-10-01 裁定）：#258 给 writePlanSnapshot 加了
+    //   本地角色门 `this._assertTeamActionPre('edit-board')`；抽取式沙箱（new Function）的 this 没有
+    //   原型链 ⇒ 必须补桩，否则 TypeError → {ok:false} → 后续断言假红。
+    //   门的真实行为由 smoke-test-la-audit-fixes.mjs（真引擎 viewer 被拒）与
+    //   smoke-test-t0-8-mutation-gate.mjs 专测；本套件考的是归档/老化/幂等，不是门本身。
+    _assertTeamActionPre() {},
     wbWsKeyPre: () => 'test-ws',
     // P2 sidecar(2026-09-16)桩: writeHandoffLedger/writePlanSnapshot 写盘后会调 writeSidecarEntryPre
     // (boardMode 默认 legacy 时它是 no-op, 但抽取式沙箱里 this 上必须有该方法, 否则 TypeError)。
@@ -83,8 +90,8 @@ function makeFakeEngine() {
   }
 }
 const bindMethod = (header, fake, extra) => { // 方法简写 → 对象字面量 → 取出绑定 fake this(注入模块级符号+extra)
-  const names = ['canonicalCalendarPath', 'withCalendarLock', 'writeTextAtomicPre', 'readPlanPre', 'planRevisionPre', 'anchoredPlanPre', 'archivePlanPre', 'conflictPlanPre', 'preparePlanPre', 'path', 'existsSync', 'mkdir', 'writeFile', 'readdir', 'stat', 'handoffStamp', 'nowHm']
-  const vals = [canonicalCalendarPath, withCalendarLock, writeTextAtomicPre, readPlanPre, planRevisionPre, anchoredPlanPre, archivePlanPre, conflictPlanPre, preparePlanPre, path, existsSync, mkdir, writeFile, readdir, stat, handoffStampFn, nowHmFn]
+  const names = ['withMemoryAdmissionScopePre', 'canonicalCalendarPath', 'withCalendarLock', 'writeTextAtomicPre', 'readPlanPre', 'planRevisionPre', 'anchoredPlanPre', 'archivePlanPre', 'conflictPlanPre', 'preparePlanPre', 'path', 'existsSync', 'mkdir', 'writeFile', 'readdir', 'stat', 'handoffStamp', 'nowHm']
+  const vals = [withMemoryAdmissionScopePre, canonicalCalendarPath, withCalendarLock, writeTextAtomicPre, readPlanPre, planRevisionPre, anchoredPlanPre, archivePlanPre, conflictPlanPre, preparePlanPre, path, existsSync, mkdir, writeFile, readdir, stat, handoffStampFn, nowHmFn]
   for (const k of Object.keys(extra || {})) { names.push(k); vals.push(extra[k]) }
   const obj = new Function(...names, 'return {' + extractFn(header) + '};')(...vals)
   return obj[Object.keys(obj)[0]].bind(fake)
@@ -155,7 +162,12 @@ const grab = (name) => { // 逐行扫描+(){} 混合配平(兼容 Object.freeze 
   }
   return buf
 }
-const helpers = ['DEFAULT_PROMPT_LAYERS', 'neutralizePromptTemplateVars', 'truncateHead', 'truncateLinesBounded', 'stripSensitiveSections', 'sanitizeForInjection', 'scrubJunkLines', 'reflectionDigest', 'mojibakeDensity', 'MOJIBAKE_RE', 'detectStutter', 'hasStutter', 'BASE64_LINE', 'todayStr'] // ★2026-09-29 hasStutter 改调 detectStutter(P0-2 语种盲区修复),抽取清单同步补符号,否则 eval 沙箱 ReferenceError
+// ★R1（2026-10-08）判据同步（非回滚 · 依据 2026-10-01 裁定）：`stripSensitiveSections` 已由
+//   #257 SEC-01 从 index.js 的**本地定义**改为从 `lib/injection-policy.js` **import**
+//   ⇒ 本套件的 grab() 只在本文件里找定义，找不到即抛 helper not found。
+//   修法与下面对 `memory-envelope.js` 的既有做法**完全同款**：把那个模块整体注入沙箱
+//   （injection-policy.js 零 import，可直接内联）。守卫语义不变，仍是抽取真代码执行。
+const helpers = ['DEFAULT_PROMPT_LAYERS', 'neutralizePromptTemplateVars', 'truncateHead', 'truncateLinesBounded', 'sanitizeForInjection', 'scrubJunkLines', 'reflectionDigest', 'mojibakeDensity', 'MOJIBAKE_RE', 'detectStutter', 'hasStutter', 'BASE64_LINE', 'todayStr'] // ★2026-09-29 hasStutter 改调 detectStutter(P0-2 语种盲区修复),抽取清单同步补符号,否则 eval 沙箱 ReferenceError
 // ★T7-a（2026-09-20 · 上游 #86-4）：水位/接续默认值已抽为**模块级常量**，本套件同样是
 //   "源码抽取 + new Function"执行 `renderMemoryDynamic`，故必须显式注入这两个自由变量，
 //   否则抛 `ReferenceError: DEFAULT_WATER_LEVEL_THRESHOLD is not defined`（实测已发生）。
@@ -163,6 +175,10 @@ const helpers = ['DEFAULT_PROMPT_LAYERS', 'neutralizePromptTemplateVars', 'trunc
 //   否则测的就不是真代码（与上面 composeMemoryEnvelopePre 那条同因）。
 const helperCode = helpers.map((h) => grab(h)).join('\n')
   + '\nconst DEFAULT_WATER_LEVEL_THRESHOLD = 0.75\nconst DEFAULT_AUTO_CONTINUE_THRESHOLD = 0.75\n'
+  // ★R1（2026-10-08）：同上 —— #257 把 stripSensitiveSections/filterSensitiveHits 收进
+  //   injection-policy.js（index.js 只 import）；抽取式沙箱须显式提供其实现，否则
+  //   `new Function` 作用域里没有该符号（renderMemoryDynamic :7611/:7613/:7660/:7661 四处调用）。
+  + readFileSync(path.resolve(HERE, '..', '..', 'lib', 'injection-policy.js'), 'utf8').replace(/^export /gm, '') + '\n'
 // ⚠️ 2026-09-14 T0-3：`renderMemoryDynamic` 现在把序列化交给**分项账本**（`composeMemoryEnvelopePre`），
 // 所以源码抽取式测试必须**连那个模块一起注入**——否则 `new Function` 作用域里没有这个符号
 // （报 `ReferenceError: composeMemoryEnvelopePre is not defined`）。
@@ -198,7 +214,11 @@ ok(!run(fakeNoCache).includes('[交接续命]'), '未绑定但全局账本未缓
 console.log('[handoff] G5 M-CM2 recall scope 路由(源码守卫+语料检索)')
 ok(SRC.includes("async recall(query, limit = 8, agent, scope = 'all', opts = null)"), 'recall 带 scope 参数(默认 all;P4 可选 opts 扩展)')
 ok(SRC.includes("if (scope === 'handoff') {") && SRC.includes("if (scope === 'sessions') {"), 'handoff/sessions 早返分支存在')
-ok(SRC.includes("scope: { type: 'string', enum: ['all', 'handoff', 'sessions']") && SRC.includes("engine.recall(args.query, args.limit, exec.agent, args.scope || 'all', { format: args.format || 'l0', expand: args.expand })"), 'memory_recall 工具声明 scope 枚举并透传(P4 可选 format/expand 随 opts 透传)')
+// ★2026-10-13（#333②）：scope 枚举新增 'archive'（检索已归档旧日志的显式通道，不并入 all）。
+//   判据演进为「枚举包含四个值」= 仍守住「声明完整且透传」的原意。
+ok(SRC.includes("scope: { type: 'string', enum: ['all', 'handoff', 'sessions', 'archive']") && SRC.includes("engine.recall(args.query, args.limit, exec.agent, args.scope || 'all', { format: args.format || 'l0', expand: args.expand })"), 'memory_recall 工具声明 scope 枚举（含 archive）并透传(P4 可选 format/expand 随 opts 透传)')
+// 新增：archive 分支确实存在（负路径 —— 只声明枚举而无分支等于没接线）
+ok(SRC.includes("if (scope === 'archive') {") && SRC.includes('[记忆检索|archive]'), 'memory_recall 的 archive 分支确实接线（含其专属标签，非仅枚举）')
 ok(CSRC.includes("set('handoffEnabled', e.target.checked)") && CSRC.includes("fHandoff: '交接白板'"), '设置页交接白板开关接线(client)')
 const fakeG5 = Object.assign(makeFakeEngine(), { config: { handoffEnabled: true } })
 const listLedgers = bindMethod('async listHandoffLedgers(dir, limit = 12) {', fakeG5)

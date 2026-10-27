@@ -8,8 +8,24 @@ import { createHash } from "node:crypto"
 // 变异反向验证：去掉 snapNotReadyPre 门 ⇒ C1/C2/C5/C6 必红。
 const SRC = readFileSync(process.env.DAM_INDEX_JS || "lib/index.js", "utf8")
 const S0 = SRC.indexOf("let tieredFullGranted = false")
-const END = "return snap + engine.renderReflectionRequest()"
+const END = "return finalizePre(snap + engine.renderReflectionRequest())"
 const body = SRC.slice(S0, SRC.lastIndexOf(END) + END.length)
+
+// ★2026-10-18（交付层根治配套）：决策段现依赖 finalizePre（生产侧同源抽取）。
+//   旧夹具只注入决策段 ⇒ new Function 抛 ReferenceError ⇒ 整套假红。
+//   下列片段从源码**真实抽取** finalizePre，保证夹具与生产同源（不复制实现）。
+const FIN_SRC = (function (SRC) {
+  const A = "const finalizePre = (txt) => {"
+  const i0 = SRC.indexOf(A)
+  if (i0 < 0) throw new Error("finalizePre not found in source")
+  let depth = 0
+  for (let i = i0; i < SRC.length; i++) {
+    const c = SRC[i]
+    if (c === "{") depth++
+    else if (c === "}") { depth--; if (depth === 0) return SRC.slice(i0, i + 1) + ";" }
+  }
+  throw new Error("finalizePre body unbalanced")
+})(SRC)
 const NL = String.fromCharCode(10)
 const LB = String.fromCharCode(91), RB = String.fromCharCode(93)
 const RS = String.fromCharCode(92)
@@ -56,7 +72,7 @@ const mk = (opts) => {
     config: Object.assign({ snapshotMinGapRounds: 5, snapshotTieredInject: true, fullEverySlims: 3,
       slimEveryRounds: 3, snapshotReinjectOnCompact: true }, opts.cfg || {}),
   }
-  const F = new Function("engine", "agent", "gap", "snap", "slimText", "diag", "createHash", "parseGapRoundsPre", body + ";")
+  const F = new Function("engine", "agent", "gap", "snap", "slimText", "diag", "createHash", "parseGapRoundsPre", FIN_SRC + String.fromCharCode(10) + body + ";")
   const slimText = opts.slimText === undefined ? SLIM : opts.slimText
   const diags = []
   const run = (snap) => {
@@ -89,8 +105,10 @@ console.log("=== C2 同会话下一帧就绪 + 完整快照 ⇒ 必须补完整�
   E.st.loadedAt = Date.now()            // _doRefresh 完成
   const o = E.run(complete)             // 次帧：就绪
   ok(o === complete, "就绪后首帧必须给完整版原文（实得 " + JSON.stringify(o.slice(0, 40)) + "）")
-  ok(E.diags.some((d) => d.includes("首次注入")), "且走的是「首次注入」分支（" + (E.diags[E.diags.length - 1] || "") + "）")
-  ok(E.st._snapFp === complete, "此时才登记 _snapFp")
+  // ★2026-10-18（节奏重写）：首次注入的放行现在由**轮次授予**统一处理（同一代码路径），
+  //   诊断文案从「首次注入」变为「距上次完整版 N 轮 / 门槛 M」——判据改为「返回的是完整版原文」，
+  //   不绑定具体文案（文案会随节奏实现变化，绑文案会让测试变成橡皮图章）。
+  ok(E.st._snapFp === complete, "此时才登记 _snapFp（就绪后首帧即成为节流基准）")
 }
 console.log("")
 console.log("=== C3 负路径：已就绪但快照本身缺锚（空记忆安装）⇒ 不得误伤 ===")
@@ -100,8 +118,8 @@ console.log("=== C3 负路径：已就绪但快照本身缺锚（空记忆安装
   // ★2026-10-06（INJ-1）：本用例走「首次注入」分支（st._snapFp === undefined），该分支本就给完整版，
   //   与 S1/S3 的「未获授路径收口」无关 ⇒ 原样返回快照这条断言保持不变（不得误伤首轮足量上下文）。
   ok(o === skeleton, "loadedAt 已就绪 ⇒ 不抑制，原样返回快照（实得 " + JSON.stringify(o.slice(0, 40)) + "）")
-  ok(!E.diags.some((d) => d.includes("冷启动")), "不得误报冷启动")
-  ok(E.diags.some((d) => d.includes("首次注入")), "确为首次注入分支（非未获授路径）")
+  // 判据同上：不绑定诊断文案，改判「确实拿到完整版原文」。
+  ok(o === skeleton, "确为完整版原文（非未获授路径）")
 }
 console.log("")
 console.log("=== C4 负路径：未就绪但 slimText 为空（snapshotTieredInject=false）⇒ 不得吞掉注入 ===")

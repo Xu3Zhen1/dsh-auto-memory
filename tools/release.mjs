@@ -5,14 +5,15 @@
  *   例: node tools/release.mjs 0.1.30 --dry-run
  * 流程: 复制预览版 → 反转全部 _pre/-pre 标识(发布转换输入禁止出现 _dev/auto-memory-dev) →
  *       生成正式 package.json → 语法/BOM/残留验证。
- * 源目录: 默认 D:\dsh-auto-memory(preview 分支),可用环境变量 DSH_AUTO_MEMORY_DEV 覆盖。
+ * 源目录: 默认 = 本脚本所在仓库的根(相对脚本自身位置解析,任意克隆/CI 均可运行),可用环境变量 DSH_AUTO_MEMORY_DEV 覆盖(覆盖优先)。
  * 目标目录: 默认 D:\dsh_debug\_publish_dsh-auto-memory,可用环境变量 DSH_AUTO_MEMORY_REL 覆盖;
  *           --dry-run 时强制改用临时 staging 目录,不触碰真实发布基座,不做任何发布动作。
  */
 import { cpSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync, statSync, mkdirSync } from 'node:fs'
-import { execSync } from 'node:child_process'
+import { execSync, execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 
 // ---------- 1. 参数 ----------
 const argv = process.argv.slice(2)
@@ -23,7 +24,11 @@ if (!/^\d+\.\d+\.\d+$/.test(version || '')) {
   process.exit(1)
 }
 
-const DEV = process.env.DSH_AUTO_MEMORY_DEV || 'D:\\dsh-auto-memory'          // 预览版源(preview 工作区)
+// ★#256（2026-10-08）去本机路径依赖：源目录默认**相对脚本自身位置**解析，
+//   使本脚本在任意克隆/CI 上可直接运行（旧实现硬编码 'D:\\dsh-auto-memory'，
+//   在 CI/他人机器上该目录不存在 ⇒ 连第一步就崩，其后的上游回流自检更无从谈起）。
+//   `DSH_AUTO_MEMORY_DEV` 覆盖**优先保留**：本机工作流用它指向另一棵源树。
+const DEV = process.env.DSH_AUTO_MEMORY_DEV || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 let REL = process.env.DSH_AUTO_MEMORY_REL || 'D:\\dsh_debug\\_publish_dsh-auto-memory' // 发布基座(保留 .git)
 
 // ---------- 2. 复制预览版文件(--dry-run 使用临时 staging) ----------
@@ -32,7 +37,129 @@ if (dryRun) {
   REL = path.join(tmpdir(), 'dam-release-staging-' + Date.now())
   console.log('[release] staging 目录:', REL)
 }
+// ★#256 护栏（**自毁风险**，fail closed）：本脚本第 2 步是「先清空 REL，再从 DEV 复制」。
+//   DEV 一旦相对化，**在发布基座自己的克隆里运行本脚本时 DEV === REL** ⇒ 先清空该目录、
+//   再从「已被清空的源」复制 ⇒ **发布基座自毁**。而发布树 tools/ 下同样有 release.mjs
+//   （本脚本的 tools 拷贝清单把它原样带入）⇒ 这不是假想路径。
+//   位置说明：置于 dry-run 的 REL 改写**之后** —— 那时 REL 已是 tmpdir，
+//   既不会误拒无害的 dry-run，又对真正的破坏性路径（非 dry-run）保持 fail closed。
+//   判据：win32 大小写不敏感、分隔符归一（`\`/`/` 等价），同目录即拒绝执行。
+// ★#309（2026-10-08）：**同目录只是包含关系的一个特例**。旧判据只做字符串相等 ⇒
+//   DEV = REL/source（源在发布目标内部）时放行：第 3 步「清空 REL」的循环会**先把源目录整个删掉**，
+//   随后的复制因源已不存在而失败，源里的文件就此丢失（实测夹具 source/lib/marker.txt 被删除、进程退出 1）。
+//   显式配置 DSH_AUTO_MEMORY_DEV 到发布基座内部是**配置得出来的**，不是假想路径 ⇒ 必须 fail closed。
+//   新判据（组件级 + 物理路径，遵循 lib/file-boundary.js 的「唯一来源」纪律）：
+//     ① 相等                      ⇒ 拒（原有语义）
+//     ② DEV 在 REL 之内            ⇒ 拒（清空 REL 必然删除源）
+//     ③ REL 在 DEV 之内            ⇒ 拒（发布基座会把自己的源树覆盖/污染）
+//   物理路径解析：两侧都做 realpath，**并把 junction/symlink 一并解析**——否则
+//   「REL 是指向 DEV 的 junction」会绕过相等判据（realpath 后两者相等）。
+//   REL 尚不存在时（首次发布）以其**最近存在祖先**为基准解析（canonPath 同款语义）。
+const { realpathSync } = await import('node:fs')
+function physPath(p) {
+  const abs = path.resolve(String(p))
+  try { return realpathSync.native(abs) } catch (e) { /* 不存在 ⇒ 回落拼接 */ }
+  // 最近存在祖先 realpath + 缺失后缀
+  let cur = abs
+  const suffix = []
+  for (;;) {
+    const par = path.dirname(cur)
+    if (par === cur) break
+    suffix.unshift(path.basename(cur))
+    cur = par
+    try { return path.join(realpathSync.native(cur), ...suffix) } catch (e) { /* 继续上溯 */ }
+  }
+  return abs
+}
+// 组件级包含：child 是否等于 root 或位于 root 之下（两侧均已物理归一，大小写按键归一）
+const keyOf = (s) => (process.platform === 'win32' ? s.toLowerCase() : s)
+function within(parentPhys, childPhys) {
+  const rel = path.relative(keyOf(parentPhys), keyOf(childPhys))
+  if (rel === '') return true
+  return rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel)
+}
+const DEV_PHYS = physPath(DEV)
+const REL_BASE = physPath(existsSync(REL) ? REL : path.dirname(REL))
+const REL_PHYS = existsSync(REL) ? REL_BASE : path.join(REL_BASE, path.basename(path.resolve(String(REL))))
+const devInsideRel = within(REL_PHYS, DEV_PHYS)
+const relInsideDev = within(DEV_PHYS, REL_PHYS)
+if (keyOf(DEV_PHYS) === keyOf(REL_PHYS) || devInsideRel || relInsideDev) {
+  const why = keyOf(DEV_PHYS) === keyOf(REL_PHYS) ? '是同一个目录'
+    : devInsideRel ? '位于发布基座**内部**(清空基座会连源一起删除)'
+      : '**包含**了发布基座(复制会覆盖源树自身)'
+  console.error('[release] ❌ 源目录与发布基座冲突,拒绝执行(第 3 步会先清空发布基座,再从未清空的源复制 ⇒ 自毁):')
+  console.error('   原因: 源目录' + why)
+  console.error('   DEV = ' + DEV + (DEV_PHYS !== path.resolve(String(DEV)) ? '  (物理: ' + DEV_PHYS + ')' : ''))
+  console.error('   REL = ' + REL)
+  console.error('   修法:①在**别的**克隆里运行本脚本(源 = 本脚本所在仓库);或')
+  console.error('        ②显式指定源树:  set DSH_AUTO_MEMORY_DEV=<另一棵源树>;或')
+  console.error('          用环境变量 DSH_AUTO_MEMORY_REL 把发布基座指向别处。')
+  console.error('        (源与发布基座不得相同,也不得有任一方向的包含关系,含 junction/symlink 解析后)')
+  process.exit(1)
+}
 if (!existsSync(DEV)) { console.error('[release] ❌ 源目录不存在:', DEV); process.exit(1) }
+// ---------- 2.0 ★#323 源侧预检（必须在**首次创建/删除发布目标之前**完成） ----------
+// 事故形态：源是普通文件 / 缺必需目录 / 缺必需工具 / 缺 Python 运行时文件时，旧实现在这里一声不响地
+//   往下走 —— 先把 REL 里的旧内容循环 rmSync 掉，到了后面的拷贝/校验步骤才报错退出。
+//   于是「一次失败的发布」把**上一版发布基座**毁掉了（上游对照实测 16 PASS / 4 FAIL / 5 SKIP）。
+//
+// ★强度按**损害模型**分级（不是「一刀切严格」，也不是不查）：
+//   · 非 dry-run：目标是**真实发布基座**，清空不可逆 ⇒ 发现问题一律 fail closed（不碰目标）。
+//   · dry-run：REL 已被改写成新建的 tmp staging 目录（见上），清空它没有任何真实损害 ⇒
+//     只告警不中止。理由是既有的 dry-run 套件（issue170/issue256）用**故意的部分夹具**
+//     来驱动拷贝/过滤/交付核对相位，若在这里一刀切中止，会把它们一起打红（实测已验证过一次）。
+//   ⇒ 结论：**损害可能发生的地方严格，不可能发生的地方告警**，两侧都如实留痕。
+//
+// ⚠️ 与 §2 的「产物侧交付核对」分工不同、都要留：这里是**源能不能用**，那里是**产物有没有交出来**。
+const REQUIRED_SOURCE_DIRS = ['lib', 'tests', 'python']
+const REQUIRED_SOURCE_FILES = [
+  'lib/index.js', 'lib/client.js',
+  'cordis.patch.yml', 'CHANGELOG.md',
+  // 上游回流自检的调用目标：缺它 ⇒ 发布物自带断链（#256），属「源不能用」而非「产物没交」
+  'tools/run-smoke.mjs', 'tools/smoke-impact.mjs', 'tools/release.mjs', 'tools/build-iter5-skin.mjs',
+  'tools/reconcile-upstream.mjs',
+]
+// Python 运行时四件套。判据用「按需」：python/ 里没有任何 .py 视为该树不含 Python 运行时（最小夹具），
+//   不强制；一旦有 .py，就要求这四件齐全 —— 真实发布树永远走这条分支。
+const REQUIRED_PYTHON_RUNTIME = ['worker_v1.py', 'worker_semantic_v1.py', 'm7_activation_features_v2.py', 'm7_embedding_v1.py']
+const sourceProblems = []
+try {
+  if (!statSync(DEV).isDirectory()) throw new Error('源目录不是目录: ' + DEV)
+  for (const dir of REQUIRED_SOURCE_DIRS) {
+    const p = path.join(DEV, dir)
+    if (!statSync(p).isDirectory()) { sourceProblems.push('缺少必需目录: ' + dir); continue }
+    readdirSync(p)   // 可读性：目录在但读不了，同属「不能用来构建」
+  }
+  for (const rel of REQUIRED_SOURCE_FILES) {
+    const p = path.join(DEV, rel)
+    if (!statSync(p).isFile()) { sourceProblems.push('缺少必需文件: ' + rel); continue }
+    readFileSync(p)  // 可读性：存在但读不了（EACCES）同样前置拒绝
+  }
+  const pyEntries = readdirSync(path.join(DEV, 'python')).filter((f) => /\.py$/.test(f))
+  if (pyEntries.length) {
+    for (const f of REQUIRED_PYTHON_RUNTIME) {
+      const p = path.join(DEV, 'python', f)
+      if (!statSync(p).isFile()) { sourceProblems.push('缺少 Python 运行时文件: python/' + f); continue }
+      readFileSync(p)
+    }
+  }
+} catch (error) {
+  sourceProblems.push('不可读/不可访问: ' + ((error && error.message) || error))
+}
+if (sourceProblems.length) {
+  if (dryRun) {
+    console.warn('[release] ⚠ 源侧预检发现问题（dry-run 的 REL 是新建 tmp staging，无真实损害，继续）:')
+    for (const p of sourceProblems) console.warn('   · ' + p)
+  } else {
+    console.error('[release] ❌ 源输入检查失败，**未创建/未清空发布目标**:')
+    for (const p of sourceProblems) console.error('   · ' + p)
+    console.error('   修法:补齐上面点名的源侧文件/目录后重跑；本脚本在源侧预检通过前不会碰发布基座。')
+    process.exit(1)
+  }
+} else {
+  console.log('[release] 源侧预检: OK(' + REQUIRED_SOURCE_DIRS.length + ' 个必需目录 + ' + REQUIRED_SOURCE_FILES.length + ' 个必需文件)')
+}
+
 mkdirSync(REL, { recursive: true })
 for (const entry of readdirSync(REL)) {
   if (entry === '.git' || entry === '.gitignore') continue
@@ -99,7 +226,14 @@ copyDirExcluding(path.join(DEV, 'python'), path.join(REL, 'python'), /(__pycache
 //   但 GitHub 仓库侧整树移出导致 README 的 docs/screenshots 配图与约 20 处文档链接全部 404，
 //   属超范围执行。现恢复 docs 全树随 REL 仓分发（npm 侧由 package.json files 决定，维持精简）。
 // ★issue #211（2026-10-04，部分有效）：docs 不进 **npm 包**（files 口径）仍维持。
-for (const entry of ['cordis.patch.yml', 'README.md', 'README.zh-CN.md', 'LICENSE', 'notices.json', 'social-preview.html', '.github',
+// ★2026-10-14（吸收 PR#420 时实测抓到，与上方 CHANGELOG.md / tools/lib / build-iter5-skin.mjs 同型漏网）：
+//   `.gitattributes` 此前**从不在任何复制清单里**，但它自 v3.3.3 起已在 GitHub `main` 上存在
+//   （由 PR#420 带入），且是**行尾契约的唯一声明处**（m3b1 CRLF 夹具 / .github 脚本与 scf_bootstrap
+//   的 LF 钉死 / *.zip binary）。漏拷的后果是**破坏性**的而非仅断链：本脚本第 1 步会先清空 REL，
+//   漏拷 ⇒ REL 工作区里该文件消失 ⇒ 下一步 `git add -A` 会把它**从 main 删除**，
+//   于是 CI 在 Ubuntu 上因行尾而红、zip 字节契约与 group-digest 锚串一并失守。
+//   判据：`.gitattributes` 必须在复制清单内 —— 它是契约文件，不是开发残留。
+for (const entry of ['.gitattributes', 'cordis.patch.yml', 'README.md', 'README.zh-CN.md', 'LICENSE', 'notices.json', 'social-preview.html', '.github',
   // ★2026-09-21 补 CHANGELOG.md：两份 README **各有 3 处**链接到 `CHANGELOG.md`（导航条 / 文末链接区，
   //   共 6 处），但此文件此前**从不在复制清单里**，REL 仓也从未有过它 ⇒ GitHub 上点「Changelog」
   //   一直是 **404**（`git log --all -- CHANGELOG.md` 为空可证）。发版脚本漏拷，属真断链。
@@ -115,6 +249,45 @@ for (const entry of ['cordis.patch.yml', 'README.md', 'README.zh-CN.md', 'LICENS
   const s = path.join(DEV, entry), d = path.join(REL, entry)
   if (existsSync(s)) cpSync(s, d, { recursive: true })
 }
+
+// ---------- 2.5 docs 覆盖护栏(#v3.3.15，fail-soft + 显式告警) ----------
+// ★事故形态(2026-10-21 实测踩到)：上面的清单用 `cpSync(s, d, { recursive: true })` 把 dev 的
+//   `docs/` **整树覆盖**进 REL。而 `docs/landing/` 是对外站点(GitHub Pages 发的是 docs/ 整树)，
+//   若 dev 与 main 上同一页文案不同(例如用户在 main 上直接改了措辞)，发版就会**静默把线上文案回退**。
+//   实测：有人在 main 把「征集」改成「协作征集」，dev 仍是「征集」⇒ v3.3.14 构建时该行被覆盖回
+//   「征集」，靠人工在推送前发现才没上线。这类回退**不会让任何测试变红**，只能靠机械比对兜住。
+//
+// ★为什么是「告警」而不是「直接阻断」：docs/ 覆盖本身就是发版的正向路径(dev 是唯一发布源)，
+//   dev 领先 main 属常态；粗暴 fail-closed 会让每次正常发版都崩。故只对**归一化后仍有实质差异**
+//   的文件列表做提示，让人在 push 前有据可查；真正的判据是「差异是否为人有意为之」。
+//   归一化：两侧都做 CRLF→LF，避免行尾差异淹没真实内容差异(实测 dev 是 CRLF、main 是 LF)。
+function reportDocsOverwriteRisk() {
+  try {
+    const git = (args) => execFileSync('git', args, { cwd: REL, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 })
+    let base = null
+    try { base = git(['rev-parse', '--verify', 'origin/main']).toString('utf8').trim() } catch (e) { return } // 无 origin/main(干净克隆/CI) ⇒ 跳过
+    if (!base) return
+    const changed = git(['diff', '--name-only', base, '--', 'docs']).toString('utf8').split(/\r?\n/).filter(Boolean)
+    if (!changed.length) { console.log('[release] docs 覆盖护栏: docs/ 与 origin/main 无差异 ✓'); return }
+    const real = []
+    for (const rel of changed) {
+      const abs = path.join(REL, rel)
+      let mine = ''
+      try { mine = readFileSync(abs, 'utf8') } catch (e) { real.push(rel + ' (dev 缺失 ⇒ 将从 main 删除)'); continue }
+      let theirs = ''
+      try { theirs = git(['show', base + ':' + rel.replace(/\\/g, '/')]).toString('utf8') } catch (e) { real.push(rel + ' (main 无此文件 ⇒ 新增，正常)'); continue }
+      if (mine.replace(/\r\n/g, '\n') !== theirs.replace(/\r\n/g, '\n')) real.push(rel)
+    }
+    if (!real.length) { console.log('[release] docs 覆盖护栏: 差异仅为行尾/新增文件 ✓'); return }
+    console.warn('[release] ⚠ docs 覆盖护栏: 以下文件在 dev 与 origin/main 上**内容不同**，本次发版会用 dev 版本覆盖线上：')
+    for (const rel of real) console.warn('   · ' + rel)
+    console.warn('   若其中含**在 main 上做过、dev 未同步**的改动，push 前请先把 dev 对齐，否则线上会被回退。')
+    console.warn('   (本检查不阻断构建：dev 领先 main 属正常发版路径。)')
+  } catch (e) {
+    console.warn('[release] docs 覆盖护栏跳过(无法比对 origin/main): ' + (e && e.message ? e.message : e))
+  }
+}
+reportDocsOverwriteRisk()
 // ★2026-09-22：把发版线**必需的两个工具**带进发布包 —— CI 运行器 + 转换表真源。
 //   背景：此前 tools/ 整个不在复制清单，REL 仓因此**从未有过 tools/**，main 上既没有
 //   `tools/run-smoke.mjs`（CI 无从运行）也没有 `tools/release.mjs`（t7e / issue110 /
@@ -130,7 +303,19 @@ for (const entry of ['cordis.patch.yml', 'README.md', 'README.zh-CN.md', 'LICENS
 //   使 relName() 把 /api/dsh-auto-memory/ 推成 /bpi/dsh-buto-memory-pre/，issue111 八条断言集体假红。
 //   改用字符串 split 形态，对扫描正则不可见。
 // The runner's statically imported dependency must survive release sync as well.
-for (const toolFile of 'run-smoke.mjs,smoke-impact.mjs,release.mjs'.split(',')) {
+// ★#256（2026-10-08）：`reconcile-upstream.mjs` 并入本清单。
+//   事故机理：tools/ 用**白名单**入包，该文件从未被列入 ⇒ **永远进不了发布树**；
+//   而 GitHub `main` 正是由发布树生成 ⇒ 即使它在开发树里已跟踪（ca94bf6 v3.1.4 批 J），
+//   `main`/干净克隆也永远拿不到它。而下方 3.7 段**无条件调用**它 ⇒ 干净克隆跑 release 必崩。
+//   ⚠️ 本清单式循环对缺失是 `continue`（**静默跳过**）—— 故另配下方「交付核对」硬检查，
+//      否则会重演「以为交付了其实没有」。
+// ★2026-10-14（吸收 PR#420）：`check-write-contract.mjs` 与 `check-write-contract-await.mjs`
+//   都必须入包 —— 发布树里有两套**都在被测试引用**的写入契约检查器：
+//     · tests/smoke/smoke-test-i332-write-contract.mjs  → tools/check-write-contract.mjs（#332 吸收）
+//     · tests/smoke/smoke-test-issue368-write-contract-negative.mjs → tools/check-write-contract-await.mjs（PR#420）
+//   而 tools/ 是**白名单**入包 ⇒ 不列即静默跳过；漏了会出现「发布树里测试引用的工具不存在」，
+//   即本文件反复记录的同一型漏网（CI 里 ERR_MODULE_NOT_FOUND / ENOENT）。
+for (const toolFile of 'run-smoke.mjs,smoke-impact.mjs,release.mjs,reconcile-upstream.mjs,check-write-contract.mjs,check-write-contract-await.mjs,chart-engine.mjs,chart-figs.mjs,chart-figs-step5.mjs,chart-audit.mjs'.split(',')) {
   const src = path.join(DEV, 'tools', toolFile)
   if (!existsSync(src)) continue
   mkdirSync(path.join(REL, 'tools'), { recursive: true })
@@ -164,6 +349,21 @@ for (const toolFile of 'build-iter5-skin.mjs'.split(',')) {
   if (!existsSync(src)) { console.error('[release] ❌ tools/' + toolFile + ' 缺失 — 发布树将无法重新生成皮肤'); process.exit(1) }
   mkdirSync(path.join(REL, 'tools'), { recursive: true })
   cpSync(src, path.join(REL, 'tools', toolFile))
+}
+// ★#256（2026-10-08）②交付核对（fail closed）：上面两个清单式循环对缺失一律 `continue`
+//   （**静默跳过**）—— 这正是本缺陷的成因：文件没被列入，构建照样「成功」。
+//   故此处**不信任清单**，直接核对**交付结果**：每个必需工具必须已落在 REL 里。
+//   判据从「源侧有没有」改为「产物侧有没有」—— 与 3.7 的调用点严格配套。
+const REQUIRED_RELEASE_TOOLS = ['run-smoke.mjs', 'smoke-impact.mjs', 'release.mjs', 'build-iter5-skin.mjs', 'reconcile-upstream.mjs']
+{
+  const absent = REQUIRED_RELEASE_TOOLS.filter((f) => !existsSync(path.join(REL, 'tools', f)))
+  if (absent.length) {
+    console.error('[release] ❌ 发布树 tools/ 缺必需文件: ' + absent.join(', '))
+    console.error('   修法:确认它们存在于 ' + path.join(DEV, 'tools') + '，且已列入上方 tools 拷贝清单；')
+    console.error('         其中 reconcile-upstream.mjs 是 3.7 上游回流自检的**调用目标**，缺它则发布物自带断链（#256）。')
+    process.exit(1)
+  }
+  console.log('[release] tools/ 交付核对: OK(' + REQUIRED_RELEASE_TOOLS.length + ' 个必需文件均已在发布树)')
 }
 
 // ---------- 3. pre → 正式 反转(精确替换;转换输入一律 _pre,禁止 _dev) ----------
@@ -638,7 +838,16 @@ const pyMissing = pyMust.filter((f) => !existsSync(path.join(pyDir, f)))
 if (pyMissing.length) { console.error('[release] ❌ python/ 运行时缺失: ' + pyMissing.join(', ')); process.exit(1) }
 if (existsSync(path.join(pyDir, 'bench'))) { console.error('[release] ❌ python/bench(含 539MB 模型夹具)不得进入发布包 — 检查 package.json files 排除规则'); process.exit(1) }
 if (!existsSync(path.join(REL, 'lib', 'client.js'))) { console.error('[release] ❌ lib/client.js 缺失'); process.exit(1) }
+// ★#256（2026-10-08）③交付断言：`reconcile-upstream.mjs` 是 3.7 上游回流自检的**调用目标**，
+//   它若没进发布树，则发布出去的 `tools/release.mjs` 自带断链（干净克隆跑 release 必 MODULE_NOT_FOUND）。
+//   本断言使「漏拷」在**发版当场**暴露，而不是等使用者克隆后才发现（§5.5 完整性口径）。
+if (!existsSync(path.join(REL, 'tools', 'reconcile-upstream.mjs'))) {
+  console.error('[release] ❌ 发布物完整性: tools/reconcile-upstream.mjs 缺失 — 该文件是 release 自身上游回流自检的调用目标，#256')
+  console.error('   修法:确认它在 ' + path.join(DEV, 'tools') + ' 存在，且已列入 tools 拷贝清单（本脚本第 2 步）。')
+  process.exit(1)
+}
 console.log('[release] python/ 运行时完整 ✓ bench 已排除 ✓')
+console.log('[release] 发布物完整性 ✓(含 tools/reconcile-upstream.mjs，见 #256)')
 
 // ---------- 6. 完成 ----------
 console.log('\n✅ 构建输出目录:', REL, '(version ' + version + ')' + (dryRun ? ' [dry-run staging,未触碰真实发布基座]' : ''))

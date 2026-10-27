@@ -16,9 +16,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { shouldArmAutoContinuePre, armEligiblePre } from '../../lib/water-window.js'
-// ★2026-10-06（本 fork 重放 A）：armAutoContinue 的闸改用模块级 armEligiblePre ⇒ 同注入表纪律，
-// 必须一并注入（否则 ReferenceError 被 catch 吞掉，表现为"水位达标却不 arm"）。
+import { shouldArmAutoContinuePre } from '../../lib/water-window.js'
 // ★2026-09-30:宿主接续标题新增时间戳,走模块级纯函数 contTitleStampPre —— 抽取重建的 hostAutoContinue
 // 会引用它,必须按注入表纪律一并注入(见 makeEngine 内注释),否则 ReferenceError 被 catch 吞掉,
 // 表现为"接续静默不生效"。
@@ -161,11 +159,15 @@ function makeEngine(opts) {
       //   isSubAgentSession（子代理会话不得 arm）。抽出的方法体在 new Function 里重建，作用域中
       //   没有模块级绑定 ⇒ 必须一并注入，否则 ReferenceError 被该方法自身的 catch 吞掉，
       //   表现为「水位达标却不 arm」（同 2026-09-14 shouldArmAutoContinuePre 的教训）。
-      'isSubAgentSession', 'armEligiblePre',
+      'isSubAgentSession',
+      // ★v3.3.14：hostRefreshRitual 的两个超时默认值由内联字面量改为模块级常量 ⇒ 按本表既有纪律
+      //   （见上方 T7-a 注释与 2026-09-14 / 2026-10-06 两次教训）必须一并注入，否则 ReferenceError
+      //   被 new Function 作用域暴露出来，表现为仪式整段不生效。
+      'DEFAULT_AUTO_CONTINUE_REFRESH_TIMEOUT_SECONDS', 'DEFAULT_AUTO_CONTINUE_PROBE_TIMEOUT_SECONDS',
       'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD', 'contTitleStampPre', 'continuationProbePre', 'continuationRitualEndPre',
       'acquireSharedStateLock', 'continuedSourceFile', 'continuedSourceView', 'continuedSourceState', 'reserveContinuedSource', 'releaseContinuedSource', 'setContinuedSourceTarget', 'CONTINUE_CREATE_FALLBACK_ALLOWED_CODES',
       'return {' + extractFn(h) + '};')(
-      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 }, armEligiblePre, 0.75, 0.75, contTitleStampPre, continuationProbePre, continuationRitualEndPre,
+      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 }, 120, 60, 0.75, 0.75, contTitleStampPre, continuationProbePre, continuationRitualEndPre,
       async () => () => {}, () => '/virtual/source', () => null, (file, sid) => eng._continuedSessions.has(sid) ? {status:'done'} : null, async () => 'fixture-token', async () => {}, async () => {}, ['workspace/not-found'])
     const key = Object.keys(obj)[0]
     fns[key] = obj[key].bind(eng)
@@ -504,11 +506,7 @@ console.log('[autocont-host] A10 卡面口径 + 已接续闩锁 + 会话归属(2
     'pre-step arm 携带 window/source(否则确认卡显示「xxx / 0 token」)')
   // ②闩锁:同一会话只接续一次。旧实现只有 30 分钟冷却,冷却一过、用户切回旧窗口 → 再次 arm → 再次建会话
   //   (用户报「切回原来的窗口…它还是想接续流程」)。接续失败不落闩(允许重试)。
-  // ★2026-10-06（本 fork 重放 A · 报告 §2.6）：该早退点改为**带 reason 的块**（消除静默拒绝），
-  //   语义不变（仍直接返回，不再建会话）；断言随之放宽为「块形态 + 仍 return」，并把 reason 一并守住。
-  ok(/if \(this\.isContinuedSession\(sid\)\) \{[\s\S]{0,160}?return\s*\}/.test(SRC) &&
-     /suppressed by latch/.test(SRC),
-    'armAutoContinue 对已接续会话直接返回（2026-10-06 后为带 reason 的块，语义不变）')
+  ok(/if \(this\.isContinuedSession\(sid\)\) return/.test(SRC), 'armAutoContinue 对已接续会话直接返回')
   ok(!/engine\.markContinuedSession\(body\.fromSessionId, body\.toSessionId\)/.test(SRC),
     '权限回调不能代替材料接受，不再落闩')
   ok(/await this\.markContinuedSession\(oldSid, newId, reservation\)/.test(SRC), '宿主路径接续成功后落闩')
