@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { shouldArmAutoContinuePre } from '../../lib/water-window.js'
+import { shouldArmAutoContinuePre, armEligiblePre } from '../../lib/water-window.js'
 // ★2026-09-30:宿主接续标题新增时间戳,走模块级纯函数 contTitleStampPre —— 抽取重建的 hostAutoContinue
 // 会引用它,必须按注入表纪律一并注入(见 makeEngine 内注释),否则 ReferenceError 被 catch 吞掉,
 // 表现为"接续静默不生效"。
@@ -43,7 +43,7 @@ function extractFn(header) {
 console.log('[autocont-host] A1 源码守卫')
 ok(SRC.includes('armAutoContinue(agent, wl, opts = null) {'), 'armAutoContinue 定义存在')
 // 2.2.7:pre-step 水位测量后同样 arm(否则长回合里官方压缩抢先、接续永不触发)
-ok(/checkWaterLevelAtStep\(agent, minGapMs = 0\)[\s\S]{0,900}?this\.armAutoContinue\(agent, \{ ratio: rt2\.waterLevel[\s\S]{0,220}?awaitIdle: true/.test(SRC),
+ok(/checkWaterLevelAtStep\(agent, minGapMs = 0\)[\s\S]{0,900}?this\.armAutoContinue\(agent, \{ ratio: rt2\.waterLevel[\s\S]{0,400}?awaitIdle: true/.test(SRC),
   'pre-step 测量后 arm 自动接续(awaitIdle 标记,避免打断进行中回合;默认不节流)')
 // 2026-09-14:会话真实模型未知时不按比例 arm(首轮 request/header 尚未写入会话)。
 // 这条链要三处齐备才生效:checkWaterLevel 记字段 → 两个 arm 调用点透传 → armAutoContinue 做闸。
@@ -154,7 +154,7 @@ function makeEngine(opts) {
     // ReferenceError 被 catch 吞掉,表现为"automContState 拿不到 armed"(实测已发生)。
     // 纪律:此后凡被抽出的函数**新增外部依赖**(模块级绑定/全局),都必须加进这张注入表,
     // 否则同样以"静默不生效"的形式失败。
-    const obj = new Function('diag', 'AbortSignal', 'shouldArmAutoContinuePre',
+    const obj = new Function('diag', 'AbortSignal', 'shouldArmAutoContinuePre', 'armEligiblePre',
       // ★2026-10-06 批次 A-1f② 配套（逐 hunk 移植自 PR#217）：armAutoContinue 新增外部依赖
       //   isSubAgentSession（子代理会话不得 arm）。抽出的方法体在 new Function 里重建，作用域中
       //   没有模块级绑定 ⇒ 必须一并注入，否则 ReferenceError 被该方法自身的 catch 吞掉，
@@ -167,7 +167,7 @@ function makeEngine(opts) {
       'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD', 'contTitleStampPre', 'continuationProbePre', 'continuationRitualEndPre',
       'acquireSharedStateLock', 'continuedSourceFile', 'continuedSourceView', 'continuedSourceState', 'reserveContinuedSource', 'releaseContinuedSource', 'setContinuedSourceTarget', 'CONTINUE_CREATE_FALLBACK_ALLOWED_CODES',
       'return {' + extractFn(h) + '};')(
-      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 }, 120, 60, 0.75, 0.75, contTitleStampPre, continuationProbePre, continuationRitualEndPre,
+      () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, armEligiblePre, (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 }, 120, 60, 0.75, 0.75, contTitleStampPre, continuationProbePre, continuationRitualEndPre,
       async () => () => {}, () => '/virtual/source', () => null, (file, sid) => eng._continuedSessions.has(sid) ? {status:'done'} : null, async () => 'fixture-token', async () => {}, async () => {}, ['workspace/not-found'])
     const key = Object.keys(obj)[0]
     fns[key] = obj[key].bind(eng)
@@ -506,7 +506,7 @@ console.log('[autocont-host] A10 卡面口径 + 已接续闩锁 + 会话归属(2
     'pre-step arm 携带 window/source(否则确认卡显示「xxx / 0 token」)')
   // ②闩锁:同一会话只接续一次。旧实现只有 30 分钟冷却,冷却一过、用户切回旧窗口 → 再次 arm → 再次建会话
   //   (用户报「切回原来的窗口…它还是想接续流程」)。接续失败不落闩(允许重试)。
-  ok(/if \(this\.isContinuedSession\(sid\)\) return/.test(SRC), 'armAutoContinue 对已接续会话直接返回')
+  ok(/if \(this\.isContinuedSession\(sid\)\) \{[\s\S]{0,200}?return/.test(SRC), 'armAutoContinue 对已接续会话直接返回')
   ok(!/engine\.markContinuedSession\(body\.fromSessionId, body\.toSessionId\)/.test(SRC),
     '权限回调不能代替材料接受，不再落闩')
   ok(/await this\.markContinuedSession\(oldSid, newId, reservation\)/.test(SRC), '宿主路径接续成功后落闩')

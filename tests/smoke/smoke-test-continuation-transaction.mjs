@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { continuationProbePre, continuationRitualEndPre } from '../../lib/continuation.js'
-import { shouldArmAutoContinuePre } from '../../lib/water-window.js'
+import { shouldArmAutoContinuePre, armEligiblePre } from '../../lib/water-window.js'
 
 // ★本仓 CRLF：归一化后再按 LF 边界提取
 const host = readFileSync(new URL('../../lib/index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
@@ -19,7 +19,7 @@ function extract(src, header) {
   throw Error('unbalanced ' + header)
 }
 function compile(src, deps) { return new Function(...Object.keys(deps), 'return ' + src)(...Object.values(deps)) }
-const deps = { CONTINUE_CREATE_FALLBACK_ALLOWED_CODES: ['workspace/not-found'], acquireSharedStateLock:async()=>()=>{},continuedSourceFile:()=>'/virtual/source', continuedSourceState: () => ({status:'done'}), reserveContinuedSource: async () => 'fixture-token', setContinuedSourceTarget: async () => {}, releaseContinuedSource: async () => {}, diag() {}, AbortSignal, continuationProbePre, continuationRitualEndPre, shouldArmAutoContinuePre,
+const deps = { CONTINUE_CREATE_FALLBACK_ALLOWED_CODES: ['workspace/not-found'], acquireSharedStateLock:async()=>()=>{},continuedSourceFile:()=>'/virtual/source', continuedSourceState: () => ({status:'done'}), reserveContinuedSource: async () => 'fixture-token', setContinuedSourceTarget: async () => {}, releaseContinuedSource: async () => {}, diag() {}, AbortSignal, continuationProbePre, continuationRitualEndPre, shouldArmAutoContinuePre, armEligiblePre,
   // ★2026-10-06 批次 A-1f② 配套（逐 hunk 移植自 PR#217）：armAutoContinue 新增外部依赖
   //   isSubAgentSession（子代理会话不得 arm）。抽出的方法体在 new Function 里重建，作用域中没有
   //   模块级绑定 ⇒ 必须一并注入，否则 ReferenceError 会被该方法自身的 catch 吞掉，
