@@ -318,8 +318,13 @@ console.log('[T0-3-11] 接线守卫：index.js 的限额是推导的、优先级
   // ★2026-10-24 批次 0.5 归因（判据过期，非真缺陷）：两段 must 标记仍然存在，只是调用点新增了第 7 个参数
   //   `direction`（'tail'），于是 `'must')` 变成 `'must', 'tail')`，旧的 `'must'\)` 正则不再命中。
   //   判据意图不变（「这两段必须是 must，任何额度不足都不得先牺牲它们」），改为容忍 must 之后还有参数。
-  ok(/'user-memory'[\s\S]{0,120}'must'\s*[,)]/.test(code), '★user-memory 标为 must（用户级跨项目规则）')
-  ok(/'project-notes'[\s\S]{0,160}'must'\s*[,)]/.test(code), '★project-notes 标为 must')
+  // ★2026-11-02 归因（判据过期，非真缺陷；对应 issue #506 的修复）：两个 `must` 段调用点显式补上
+  //   `sanitizeForInjection(..., SANITIZE_NO_CAP)` 第二参数后，`'project-notes'` 到 `'must'` 的距离由
+  //   155 增到 172（越过旧的 160 窗口 12 字符），`user-memory` 由 107 增到 122。
+  //   判据意图不变（「这两段必须是 must，任何额度不足都不得先牺牲它们」），只放宽表达距离窗口；
+  //   刻意不写「任意距离」——保留「must 必须紧跟在段名之后、不得被别段串进中间」这层约束。
+  ok(/'user-memory'[\s\S]{0,160}'must'\s*[,)]/.test(code), '★user-memory 标为 must（用户级跨项目规则）')
+  ok(/'project-notes'[\s\S]{0,220}'must'\s*[,)]/.test(code), '★project-notes 标为 must')
   ok(/'recent-logs'[\s\S]{0,120}'low'\)/.test(code), 'recent-logs 标为 low（先丢）')
   ok(/'frame-head'[\s\S]{0,80}'must'\)/.test(code) && /'frame-tail'[\s\S]{0,80}'must'\)/.test(code),
     '块首/块尾框架行标为 must（不可丢）')
