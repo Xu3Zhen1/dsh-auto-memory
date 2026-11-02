@@ -61,8 +61,10 @@ function parseClientTable(src) {
   const block = /var API = \{[\s\S]*?\n    \}/.exec(src)
   if (!block) throw new Error('客户端 API 表未找到(lib/client.js 形态变了,本锁需同步更新)')
   const suffix = [...block[0].matchAll(/ROUTE_PREFIX \+ '([^']+)'/g)].map((m) => m[1])
+  const keys = [...block[0].matchAll(/^\s*'?([A-Za-z0-9_-]+)'?:\s*ROUTE_PREFIX/gm)].map((m) => m[1])
   return {
     prefix: pre[1],
+    keys,
     paths: suffix.map((s) => pre[1] + s),
     blockStart: block.index,
     blockEnd: block.index + block[0].length,
@@ -106,9 +108,27 @@ const usedKeys = [...hostSrc.matchAll(/path:\s*API\.([A-Za-z0-9_]+)/g)].map((m) 
 const badKeys = [...new Set(usedKeys)].filter((k) => host.keys.indexOf(k) === -1)
 if (badKeys.length) throw new Error('A4 宿主注册引用了表里没有的键:' + badKeys.join(', '))
 
+// A5 客户端**代码**引用的键必须都在客户端表里
+//   背景（2026-11-02 实测踩过）：A1~A4 全是「表 vs 表」，抓不到「代码引用了表里没有的键」。
+//   病状：前端 `fetch(API.whoiam)` 而客户端表无 `whoiam` ⇒ fetch(undefined) ⇒ 拿到空响应体
+//   ⇒ 界面只显示 `Failed to execute 'json' on 'Response': Unexpected end of JSON input`。
+//   ⚠ 必须逐行跳过注释：注释里引用 API.x 不算消费。
+const clientUsed = new Set()
+const badClientKeys = []
+for (const line of clientSrc.split('\n')) {
+  const head = line.replace(/^\s+/, '')
+  if (head.startsWith('//') || head.startsWith('*') || head.startsWith('/*')) continue
+  for (const m of line.matchAll(/\bAPI\.([A-Za-z0-9_]+)/g)) {
+    clientUsed.add(m[1])
+    if (client.keys.indexOf(m[1]) === -1 && badClientKeys.indexOf(m[1]) === -1) badClientKeys.push(m[1])
+  }
+}
+if (badClientKeys.length) throw new Error('A5 客户端代码引用了表里没有的键:' + badClientKeys.join(', ') + ' ⇒ fetch(undefined) 会拿到空响应体,界面只会显示 JSON 解析错误。')
+
 console.log('API 路径锁: 宿主 ' + host.paths.length + ' 条 / 客户端 ' + client.paths.length + ' 条')
 console.log('A1 客户端全部命中宿主: OK(缺失 ' + missing.length + ')')
 console.log('A2 宿主独有 == 白名单: OK(' + hostOnly.length + ' 条:' + hostOnly.join(', ') + ')')
 console.log('A3 表外裸字面量: OK(0 处)')
 console.log('A4 注册键全部在表内: OK(引用 ' + new Set(usedKeys).size + ' 个键)')
-console.log('路径表一致性锁通过(4/4)')
+console.log('A5 客户端代码引用键全部在表内: OK(引用 ' + clientUsed.size + ' 个键)')
+console.log('路径表一致性锁通过(5/5)')
