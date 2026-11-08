@@ -165,9 +165,16 @@ function makeEngine(opts) {
       //   被 new Function 作用域暴露出来，表现为仪式整段不生效。
       'DEFAULT_AUTO_CONTINUE_REFRESH_TIMEOUT_SECONDS', 'DEFAULT_AUTO_CONTINUE_PROBE_TIMEOUT_SECONDS',
       'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD', 'contTitleStampPre', 'continuationProbePre', 'continuationRitualEndPre',
+      // ★2026-11-09：armAutoContinue 新增两个模块级依赖（失败熔断 + 失败短冷却）⇒ 按本表既有纪律
+      //   （T7-a / 2026-09-14 / 2026-10-06 三次同类教训）必须一并注入，否则 ReferenceError 被
+      //   armAutoContinue 自身 catch 吞掉，表现为「水位达标却不 arm」。
+      'AUTO_CONTINUE_FAIL_COOLDOWN_MS', 'AUTO_CONTINUE_FAIL_FUSE_COUNT',
       'acquireSharedStateLock', 'continuedSourceFile', 'continuedSourceView', 'continuedSourceState', 'reserveContinuedSource', 'releaseContinuedSource', 'setContinuedSourceTarget', 'CONTINUE_CREATE_FALLBACK_ALLOWED_CODES',
       'return {' + extractFn(h) + '};')(
       () => {}, { timeout: () => undefined }, shouldArmAutoContinuePre, armEligiblePre, (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 }, 120, 60, 0.75, 0.75, contTitleStampPre, continuationProbePre, continuationRitualEndPre,
+      // ★2026-11-09：两个新模块级常量的值（实参顺序 = 形参顺序）—— 60000ms 失败冷却 / 3 次熔断。
+      //   值取自 lib/index.js 的 AUTO_CONTINUE_FAIL_COOLDOWN_MS / AUTO_CONTINUE_FAIL_FUSE_COUNT。
+      60000, 3,
       async () => () => {}, () => '/virtual/source', () => null, (file, sid) => eng._continuedSessions.has(sid) ? {status:'done'} : null, async () => 'fixture-token', async () => {}, async () => {}, ['workspace/not-found'])
     const key = Object.keys(obj)[0]
     fns[key] = obj[key].bind(eng)

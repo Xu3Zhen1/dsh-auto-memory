@@ -55,10 +55,13 @@ function makeEngine(opts = {}) {
   }
   const obj = new Function('diag', 'shouldArmAutoContinuePre', 'armEligiblePre', 'isSubAgentSession',
     'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD',
+    // ★2026-11-09：armAutoContinue 新增两个模块级依赖（失败熔断 3 次 / 失败短冷却 60s）⇒ 按本表既有
+    //   纪律（自由变量必须显式注入，否则 ReferenceError 被该方法自身 catch 吞掉，表现为「达标却不 arm」）一并注入。
+    'AUTO_CONTINUE_FAIL_COOLDOWN_MS', 'AUTO_CONTINUE_FAIL_FUSE_COUNT',
     'return {' + extractFn('armAutoContinue(agent, wl, opts = null) {') + '};')(
     (m) => logs.push(String(m)), shouldArmAutoContinuePre, armEligiblePre,
     (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 },
-    DEFAULT_AUTO_CONTINUE_THRESHOLD, DEFAULT_WATER_LEVEL_THRESHOLD)
+    DEFAULT_AUTO_CONTINUE_THRESHOLD, DEFAULT_WATER_LEVEL_THRESHOLD, 60000, 3)
   const key = Object.keys(obj)[0]
   eng.arm = obj[key].bind(eng)
   eng.logs = logs

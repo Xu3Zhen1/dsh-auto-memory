@@ -25,7 +25,9 @@ const deps = { CONTINUE_CREATE_FALLBACK_ALLOWED_CODES: ['workspace/not-found'], 
   //   模块级绑定 ⇒ 必须一并注入，否则 ReferenceError 会被该方法自身的 catch 吞掉，
   //   表现为「明明达标却不 arm」（同 2026-09-14 shouldArmAutoContinuePre 的教训）。
   panelAllowedHosts: [], forbiddenPanelPayloadPre: (req) => ({ error: 'forbidden: panel-access' }), isSubAgentSession: (x) => { const h = x && x.session && x.session.header; if (!h) return false; if (String(h.origin || '') === 'subagent') return true; const d = Number(h.delegationDepth); return Number.isFinite(d) && d > 0 },
-  DEFAULT_AUTO_CONTINUE_REFRESH_TIMEOUT_SECONDS: 120, DEFAULT_AUTO_CONTINUE_PROBE_TIMEOUT_SECONDS: 60, DEFAULT_AUTO_CONTINUE_THRESHOLD: .75, contTitleStampPre: () => '09-30 12:00', randomUUID: () => 'ritual-request-001' }
+  DEFAULT_AUTO_CONTINUE_REFRESH_TIMEOUT_SECONDS: 120, DEFAULT_AUTO_CONTINUE_PROBE_TIMEOUT_SECONDS: 60, DEFAULT_AUTO_CONTINUE_THRESHOLD: .75, contTitleStampPre: () => '09-30 12:00', randomUUID: () => 'ritual-request-001',
+  // ★2026-11-09：armAutoContinue 新增的两个模块级依赖（同 arm-gate-shared / autocont-host 的注入纪律）。
+  AUTO_CONTINUE_FAIL_COOLDOWN_MS: 60000, AUTO_CONTINUE_FAIL_FUSE_COUNT: 3 }
 function method(header, extra = {}) {
   const obj = compile('({' + extract(host, header) + '})', { ...deps, ...extra })
   return Object.values(obj)[0]

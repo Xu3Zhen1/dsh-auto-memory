@@ -159,10 +159,13 @@ const bindMethod = (header, fake, extra, opts) => {
     //   否则会抛 `DEFAULT_AUTO_CONTINUE_THRESHOLD is not defined`（实测已发生）。
     //   ⚠️ 注入的是**与生产同值**的常量（0.75），不是放宽断言。
     'DEFAULT_AUTO_CONTINUE_THRESHOLD', 'DEFAULT_WATER_LEVEL_THRESHOLD',
+    // ★2026-11-09：autoContinueState / armAutoContinue 新增两个模块级依赖（失败熔断 3 次 / 失败短冷却 60s）。
+    //   本套件有 strictInjection 守卫（issue#349）会主动报缺；这里按同一纪律显式注入**生产同值**。
+    'AUTO_CONTINUE_FAIL_COOLDOWN_MS', 'AUTO_CONTINUE_FAIL_FUSE_COUNT',
     // #207: this unit checks switch eligibility only; real disk views/recovery
     // are exercised by smoke-test-issue207-routes with complete production apply.
     'continuedSourceState', 'continuedSourceView']
-  const vals = [path, SRC && null, mkdir, writeFile, readdir, stat, handoffStampFn, nowHmFn, assembleCarryPreFn, isSubAgentSessionFn, 0.75, 0.75, () => null, () => null]
+  const vals = [path, SRC && null, mkdir, writeFile, readdir, stat, handoffStampFn, nowHmFn, assembleCarryPreFn, isSubAgentSessionFn, 0.75, 0.75, 60000, 3, () => null, () => null]
   vals[1] = (p) => { try { return readFileSync(p) != null } catch (e) { return false } }
   for (const k of Object.keys(extra || {})) { names.push(k); vals.push(extra[k]) }
   // ★issue#349 结构性守卫:注入表没覆盖到被调用/被引用的宿主符号 ⇒ 这里立刻响亮失败
