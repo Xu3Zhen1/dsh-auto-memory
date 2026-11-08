@@ -79,7 +79,7 @@ for (const g of gates) console.log(`        ${g.field.padEnd(20)} @L${g.line + 1
 console.log('【发现】占位（非释放形态）')
 for (const p of placeholders) console.log(`        ${p.field.padEnd(20)} @L${p.line + 1}`)
 
-const EXPECT_GATES = ['_subagentInflight', '_wbRotateBusy', '_workbenchBusy']
+const EXPECT_GATES = ['_subagentInflight', '_wbRotateBusy', '_workbenchBusy', '_planArchiveFlight']
 console.log('\n【发现完整性】形态扫描不得漏检（坑②）')
 ck({ name: '★标量闸门发现数 = 3（smart recall 按身份 Map 单飞另验）', ok: gates.length === EXPECT_GATES.length, detail: `实际 ${gates.length}` })
 ck({
@@ -87,7 +87,7 @@ ck({
   ok: JSON.stringify([...new Set(gates.map((g) => g.field))].sort()) === JSON.stringify([...EXPECT_GATES].sort()),
   detail: [...new Set(gates.map((g) => g.field))].join(','),
 })
-ck({ name: '★标量占位发现数 = 5', ok: placeholders.length === 5, detail: `实际 ${placeholders.length}` })
+ck({ name: '★标量占位发现数 = 6（2026-11-08 _planArchiveFlight 标量闸 +1：true 占位 / finally false 释放，均匹配 SET_RE/释放形态）', ok: placeholders.length === 6, detail: `实际 ${placeholders.length}` })
 const smartStart = raw.indexOf('  async smartRecall(query, agent) {')
 const smartBody = raw.slice(smartStart, raw.indexOf('  async _smartRecallCore(', smartStart))
 ck({ name: '★smart recall 键含问题、源会话与工作区', ok: /JSON\.stringify\(\[String\(query/.test(smartBody) && smartBody.includes('p.ws') && smartBody.includes('agent.session.id') })

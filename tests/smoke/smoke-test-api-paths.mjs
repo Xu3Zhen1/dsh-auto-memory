@@ -25,6 +25,8 @@ const clientSrc = readFileSync(path.join(root, 'lib', 'client.js'), 'utf8')
 //   .../subagent-gc          : 子代理回收 CLI(tools/subagent-gc.mjs,artifacts/VERIFY-2.2.4.md 自查步骤)
 const HOST_ONLY_WHITELIST = [
   '/api/dsh-auto-memory/activation-inbox',
+  // ★S2 择优移植（2026-11-08，上游 31b2f3a0）：零额度归档白板 —— 非界面消费者：CLI/模型经 HTTP 触发归档（curl POST ?ws=）。本仓无 memory_upgrade 向导界面，前端按钮暂缺。
+  '/api/dsh-auto-memory/upgrade-archive-plan',
   '/api/dsh-auto-memory/subagent-gc',
   // ★B0（2026-09-25）：子代理契约探针 —— 消费者是本仓只读取证脚本（artifacts/_b0-probe-call.mjs），
   //   界面侧零引用。**它不是死端点**：可复用子代理（B1）的架构决策依赖它产出的真实契约数据。
