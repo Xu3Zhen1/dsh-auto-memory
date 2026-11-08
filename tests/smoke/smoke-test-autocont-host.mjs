@@ -516,10 +516,13 @@ console.log('[autocont-host] A10 卡面口径 + 已接续闩锁 + 会话归属(2
   ok(/if \(this\.isContinuedSession\(sid\)\) \{[\s\S]{0,200}?return/.test(SRC), 'armAutoContinue 对已接续会话直接返回')
   ok(!/engine\.markContinuedSession\(body\.fromSessionId, body\.toSessionId\)/.test(SRC),
     '权限回调不能代替材料接受，不再落闩')
-  ok(/await this\.markContinuedSession\(oldSid, newId, reservation\)/.test(SRC), '宿主路径接续成功后落闩')
+  // ★2026-11-09（缺口①）：调用新增第4参 opts.projectTag（项目归属随接续延续）⇒ 判据按调用前缀匹配，
+  //   守住「宿主路径确实落闩」这个意图，不再绑死实参个数（绑死会让任何参数扩展都误红）。
+  ok(/await this\.markContinuedSession\(oldSid, newId, reservation/.test(SRC), '宿主路径接续成功后落闩')
   ok(/path\.join\(dshHome\(\), 'memory', 'auto-continue-done\.json'\)/.test(SRC), '闩锁落盘(重启后依旧生效)')
   const fnHost = extractFn('async hostAutoContinue() {')
-  ok(fnHost.indexOf('await this.markContinuedSession(oldSid, newId, reservation)') > fnHost.indexOf('await sc.prompt('),
+  // ★2026-11-09：同上 —— 按调用前缀定位（实参可扩展），守住「落闩位置在 prompt 之后」。
+  ok(fnHost.indexOf('await this.markContinuedSession(oldSid, newId, reservation') > fnHost.indexOf('await sc.prompt('),
     '落闩在投料成功之后(prompt 之前失败则不落闩,允许下次重试)')
 
   const eLatch = makeEngine({ config: { autoContinueEnabled: true, handoffEnabled: true, autoContinueThreshold: 0.75 }, continued: new Set(['a']) })
