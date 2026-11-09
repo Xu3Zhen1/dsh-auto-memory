@@ -50,6 +50,11 @@
         //   本地适配：旧实现这一格用 t('autoContCancel')，该键语义由「取消」改为「终止进程」易读混，
         //   故改名为 autoContTerminate（专指终止），拒绝按钮改用既有的 autoContReject（一个键只表示一件事）。
         !confirmation && props.countdown > 0 ? h('p', null, t('autoContCountdown').replace('{s}', String(props.countdown)), ' ', h('button', { 'data-dam-btn': '', onClick: props.onReject }, t('autoContReject')), ' ', h('button', { 'data-dam-btn': '', 'data-dam-autocont-cancel': '', onClick: props.onCancel }, t('autoContTerminate'))) : null,
+        // ★2026-11-09（用户裁定「任务结束后接续」）：afterTask 不是问「现在换吗」，而是告知
+        //   「本任务结束后自动换」—— 给出的是**说明 + 可撤销**，不是 35 秒倒计时。
+        confirmation && confirmation.afterTask ? h('p', { 'data-dam-autocont-aftertask': '' }, confirmation.settled
+          ? L('✓ 任务已结束，正在接续到新会话…', '✓ Task finished; continuing into a new session…')
+          : L('本任务结束后将自动接续到新会话（不用等，也不用按键；可随时终止）。', 'This session will continue into a new one as soon as the current task finishes — no waiting, no clicking; you can cancel anytime.')) : null,
         props.executing ? h('div', { className: 'i5-continuation-progress', role: 'progressbar', 'aria-label': L('接续正在执行', 'Continuation in progress'), 'aria-busy': true }, h('span')) : null,
         props.status ? h('p', { className: 'i5-continuation-status', role: 'status' }, props.status) : null)
     }

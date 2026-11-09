@@ -144,7 +144,11 @@ ok(SRC.includes('function currentRunningInfo()') && (SRC.includes('snap.byId && 
   'G11 currentRunningInfo still reads authoritative running bit (legacy/manual paths)')
 ok(HSRC.includes('engine.armAutoContinue(agent, { ratio: rt2.waterLevel'),
   'G11 trigger moved to host: turn-stopping arms host-side countdown after water measurement')
-ok(HSRC.includes('expiresAt: now + sec * 1000') && /autoContinueConfirmSeconds/.test(HSRC),
+// ★2026-11-09：加了「任务结束后接续」后 expiresAt 形态变为 `now + (afterTask ? guardSec : sec) * 1000`。
+//   原判据绑死字面量 `now + sec * 1000` ⇒ 任何模式扩展都误红。放宽为**结构**匹配：
+//   仍必须是「宿主侧 now + ... * 1000 计算出来的截止时间」且仍读 autoContinueConfirmSeconds。
+//   原意（倒计时由宿主按 confirmSeconds 决定，不是客户端 3 秒短确认）完全保留。
+ok(/expiresAt:\s*now \+ [^,\n]*\* 1000/.test(HSRC) && /autoContinueConfirmSeconds/.test(HSRC),
   'G11 host countdown (confirmSeconds) replaces client 3s short-confirm')
 ok(!SRC.includes('wl.tokens === autoState.lastTokens'), 'G11 old "two polls flat tokens = idle" heuristic removed')
 ok(SRC.includes('apiGet(API.autoContState,') && SRC.includes('setInterval(poll, 3000)'),
