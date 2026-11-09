@@ -226,8 +226,11 @@ check('⑭ 同意门：建立入口显式传 consent + 无 consent 不建',
   //    否则会拿归档分支的调用来比（本次实测踩过：ledger 位置反而在 guard 之前 ⇒ 假红）
   const delBranch = idx.indexOf('if (cfg.autoDeleteEnabled !== false) {')
   const delSeg = delBranch > 0 ? idx.slice(delBranch, delBranch + 2600) : ''
-  const guardAt = delSeg.indexOf('if (plan.targets.length === 0) return rep')
-  const liveAt = delSeg.indexOf('if (live.length === 0) return rep')
+  // ★2026-11-09 R133：归档可观测性补漏把这两条早退从裸 return rep 改为
+  //   return this._saRecord(rep, true)（落**状态快照**，仍**不写归档账本**）——
+  //   幂等语义不变（账本写入仍在两处早退之后），断言随之改锚点。
+  const guardAt = delSeg.indexOf('if (plan.targets.length === 0) return this._saRecord(rep, true)')
+  const liveAt = delSeg.indexOf('if (live.length === 0) return this._saRecord(rep, true)')
   const ledgerAt = delSeg.indexOf('await this.saveArchiveLedger({}, rep.deleted)')
   check('⑰c4 无可删项时提前返回且不写账本（幂等）',
     delBranch > 0 && guardAt > 0 && liveAt > guardAt && ledgerAt > liveAt,
