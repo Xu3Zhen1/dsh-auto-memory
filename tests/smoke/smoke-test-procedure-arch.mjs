@@ -126,5 +126,79 @@ console.log('[B3b] promote 与 evaluatePromotion 门限码序列一致（r2 口�
   t('★差额已被显式登记（extra==1 且码为 high-risk-awaiting-approval，源自 approveFn 两分支）',
     extra === 1 && extraCode === 'high-risk-awaiting-approval', { extra, extraCode, evl: es, pro: ps })
 }
+console.log('[B3-1] 键集契约（对端新增：R138 未覆盖）')
+{
+  const evlBody = fnBody(store, 'function evaluatePromotion(procedureId) {')
+  const proBody = fnBody(store, 'function promote(procedureId, extraEvidence = {}, opts = {}) {')
+  // 键集**从源码机械抽取**（不许手写两份字面量 —— 手写就会两边一起漂移而恒真）
+  // 只抽**顶层**键：从 "return {" 起按花括号配平，深度 1 处（逗号分界）的键才算；
+  // detail:{...} 里的 need/cap/successCount 属于嵌套键，不算顶层契约。
+  const keysOf = (b) => {
+    const out = new Set()
+    for (const m of b.matchAll(/return\s*\{/g)) {
+      let i = m.index + m[0].length, d = 1, seg = ''
+      for (; i < b.length && d > 0; i++) {
+        const c = b[i]
+        if (c === '{') { d++; seg += c; continue }
+        if (c === '}') { d--; if (d === 0) break; seg += c; continue }
+        if (d === 1) seg += c
+        else seg += ' '
+      }
+      for (const part of seg.split(',')) {
+        const t = part.split(':')[0].trim()
+        if (/^[a-zA-Z_]\w*$/.test(t)) out.add(t)
+      }
+    }
+    return out
+  }
+  const pk = keysOf(proBody), ek = keysOf(evlBody)
+  t('★键集从源码抽取且两侧非空', pk.size > 0 && ek.size > 0, { pro: [...pk], evl: [...ek] })
+  // evaluate 顶层键 ⊆ promote 键集 ∪ {detail}
+  const extra = [...ek].filter((k) => !pk.has(k) && k !== 'detail')
+  t('★evaluate 的键都在 promote 键集内（detail 显式豁免）', extra.length === 0, { extra, pro: [...pk], evl: [...ek] })
+  // 负控：往 evaluate 里插一个 promote 没有的键，判据必须命中
+  const mut = evlBody.replace('reasonCodes:', 'brandNewKey: 1, reasonCodes:')
+  const extraMut = [...keysOf(mut)].filter((k) => !pk.has(k) && k !== 'detail')
+  t('负控：evaluate 插入新键后判据命中', extraMut.length >= 1, { extraMut })
+}
+
+console.log('[B3-3] 结构层码必须能被 promote/evaluate 认出，否则显式登记')
+{
+  const hsBody = fnBody(store, 'function hiddenStructuralCodesPre(p, g) {')
+  const codes = [...hsBody.matchAll(/out\.push\(\s*'([a-z-]+)/g)].map((m) => m[1])
+  t('★结构层码集非空', codes.length > 0, { codes })
+  t('★结构层码数量与对端实测一致（6 类）', codes.length === 6, { codes })
+  const proBody = fnBody(store, 'function promote(procedureId, extraEvidence = {}, opts = {}) {')
+  const evlBody = fnBody(store, 'function evaluatePromotion(procedureId) {')
+  // already-active 在 promote/evaluate 是**短路返回**而非 reason.push，属显式登记项
+  const REGISTERED_STRUCT_ONLY = ['already-active']
+  const missing = codes.filter((c) => {
+    if (REGISTERED_STRUCT_ONLY.includes(c)) return !/already-active/.test(proBody) || !/already-active/.test(evlBody)
+    return !proBody.includes(c) || !evlBody.includes(c)
+  })
+  t('★每个结构层码都能在两条路径找到对应（或已显式登记）', missing.length === 0, { missing, codes })
+}
+
+console.log('[B4-2/B4-3] 接线不得来自注释；阈值必须被真正比较（对端新增）')
+{
+  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  const idxCode = stripComments(idx), hubCode = stripComments(hub)
+  const callSites = (idxCode.match(/procedureSimilarityPre\(/g) || []).length + (hubCode.match(/procedureSimilarityPre\(/g) || []).length
+  t('★剥掉注释后 call-site 仍 >= 2（不是注释里的示例）', callSites >= 2, { callSites })
+  // 负控：把一处调用点搬进注释，剥注释后应减少
+  // 负控用**合成串**自证（比改真实文件更干净）：注释里的调用不得被计入
+  const synthetic = [
+    'const a = procedureSimilarityPre(x, y)',
+    '// procedureSimilarityPre(z, w)  <-- 注释里的示例，不该计入',
+    '/* procedureSimilarityPre(q, r)   块注释示例，也不该计入 */',
+  ].join(String.fromCharCode(10))
+  const rawCount = (synthetic.match(/procedureSimilarityPre\(/g) || []).length
+  const strippedCount = (stripComments(synthetic).match(/procedureSimilarityPre\(/g) || []).length
+  t('负控：剥注释后只留真调用（原 3 处 → 1 处）', rawCount === 3 && strippedCount === 1, { rawCount, strippedCount })
+  // B4-3 阈值必须被比较（防「只 import 没用」）
+  t('★index.js 里相似度与阈值真比较', /procedureSimilarityPre\([^)]*\)\s*>=\s*PROCEDURE_DUP_SIMILARITY_THRESHOLD/.test(idxCode) || /sim\s*>=\s*PROCEDURE_DUP_SIMILARITY_THRESHOLD/.test(idxCode))
+  t('★memory-hub 里相似度与阈值真比较', /procedureSimilarityPre\([^)]*\)\s*>=\s*PROCEDURE_DUP_SIMILARITY_THRESHOLD/.test(hubCode))
+  t('负控：阈值比较被改成恒真后判据应失配', !/procedureSimilarityPre\(cand, p\)\s*>=\s*PROCEDURE_DUP_SIMILARITY_THRESHOLD/.test(hubCode.replace('>= PROCEDURE_DUP_SIMILARITY_THRESHOLD_PRE_V1', '>= 0')))
+}
 console.log('\n结果: PASS=' + pass + ' FAIL=' + fail)
 process.exit(fail ? 1 : 0)
