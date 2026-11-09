@@ -144,6 +144,16 @@ function makeEngine(opts) {
   const fns = {}
   // 2026-09-10:hostAutoContinue 现在会调 this.inheritPermissionPreset / hostRefreshRitual 继承权限与刷材料,
   // 夹具是"从源码抽方法拼假 engine",新增的被调方法必须一并抽取,否则 this 上不存在(TypeError)。
+  // ★2026-11-09：autoContinueState 新增 `_autoContErrorMinePre`（error 按会话过滤）。
+  //   抽出的方法体在 new Function 里重建，作用域中没有这个方法 ⇒ 必须注入，
+  //   否则 TypeError 会让整个 state() 抛错、卡片彻底不出来（本仓第 6 次同型事故）。
+  eng._autoContErrorMinePre = function (st, selfKey) {
+    if (!st || !st.error) return false
+    if (!selfKey) return true
+    const own = String(st.errorSessionId || '')
+    if (!own) return true
+    return this.waterKey(own) === selfKey
+  }
   for (const h of ['armAutoContinue(agent, wl, opts = null) {', 'async tickAutoContinue() {', 'async hostAutoContinue() {', 'autoContinueState(selfSid) {', 'async decideAutoContinue(action, edgeAt, sessionId) {', 'async inheritPermissionPreset(oldAgent, newSid, opts = {}) {', 'agentForSessionId(sid) {', 'async inheritPermissionForContinue(fromSessionId, toSessionId, opts = {}) {', 'async hostRefreshRitual(oldSid) {', 'waterKey(sid) {', 'loadContinuedSessions() {', 'isContinuedSession(sid) {']) {
     // 2026-09-14:armAutoContinue 起用模块级纯函数 shouldArmAutoContinuePre(会话真实模型未知时
     // 不许按比例 arm)。抽出的函数体在 new Function 里重建,作用域中没有模块级绑定 ⇒
