@@ -90,7 +90,7 @@ async function main() {
 
   // ① 真 import 产线模块，取真 API 表（不是正则抓源码文本）
   // ★issue #211（2026-10-04）：新增 py-setup-uninstall（Python 引擎卸载，回收 ~850MB）⇒ 70→71。
-  ok(Object.keys(API).length === 75, '真 API 表 = 75 条（2026-11-08 择优移植：/whoiam +1、/upgrade-archive-plan +1；此前 py-setup-uninstall / team-control / skin-library-fetch / global-brief 各 +1，与计数锁一致）', Object.keys(API).length)
+  ok(Object.keys(API).length === 76, '真 API 表 = 76 条（2026-11-09 +1：/session-archive-status 归档可观测化只读查询）（2026-11-08 择优移植：/whoiam +1、/upgrade-archive-plan +1；此前 py-setup-uninstall / team-control / skin-library-fetch / global-brief 各 +1，与计数锁一致）', Object.keys(API).length)
   for (const [name] of ROUTES) {
     const camel = camelOf(name)
     ok(!!API[camel], '真 API 表含 ' + camel, API[camel])

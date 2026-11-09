@@ -27,6 +27,12 @@ const HOST_ONLY_WHITELIST = [
   '/api/dsh-auto-memory/activation-inbox',
   // ★S2 择优移植（2026-11-08，上游 31b2f3a0）：零额度归档白板 —— 非界面消费者：CLI/模型经 HTTP 触发归档（curl POST ?ws=）。本仓无 memory_upgrade 向导界面，前端按钮暂缺。
   '/api/dsh-auto-memory/upgrade-archive-plan',
+  // ★2026-11-09（归档可观测化）：只读状态查询 —— 非界面消费者：
+  //   ①`alpha6run/` 排障脚本按需 curl 查「上次巡检跑没跑/为何跳过/归档几个/宿主是否提供 workspaceRegistry」；
+  //   ②用户可直接 `curl -s http://127.0.0.1:<port>/api/dsh-auto-memory/session-archive-status` 自助排查。
+  //   刻意**不做界面**：归档巡检是低频后台动作，做进设置页会让「查询」看起来像「可操作的开关」——
+  //   而本端点只读、绝不触发巡检（查询本身不得引起不可回滚的动作）。
+  '/api/dsh-auto-memory/session-archive-status',
   '/api/dsh-auto-memory/subagent-gc',
   // ★B0（2026-09-25）：子代理契约探针 —— 消费者是本仓只读取证脚本（artifacts/_b0-probe-call.mjs），
   //   界面侧零引用。**它不是死端点**：可复用子代理（B1）的架构决策依赖它产出的真实契约数据。
