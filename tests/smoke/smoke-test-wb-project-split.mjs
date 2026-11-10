@@ -165,10 +165,15 @@ console.log('\n[9] mutate 自检：改坏实现，断言必须变红')
   for (const mu of mutations) {
     const mutSrc = mu.apply(SRC)
     if (mutSrc === SRC) { console.log('  (skip) 变异未命中源码：' + mu.name); continue }
-    const tmp = path.join(ROOT, 'lib', '.wb-project-split.MUT.mjs')
+    // ★2026-11-10 修（CI 间歇红根因）：原先四次变异**复用同一个临时路径**，靠 `?v=Date.now()` 破缓存，
+    //   而 `Date.now()` 精度是毫秒 —— 实测 20 万次调用里同值碰撞 199,988 次。两次变异落在同一毫秒时，
+    //   import URL **完全相同** ⇒ ESM 按 URL 缓存直接返回**上一次变异的模块** ⇒ probe 拿到错误实现 ⇒ 漏检。
+    //   已在本地最小复现：同 URL 下改写文件内容，第二次 import 仍返回旧模块（m1 === m2，get() 未变）。
+    //   修法：**每次变异用唯一文件名**（含循环下标），从根上消除 URL 碰撞，不再依赖毫秒精度。
+    const tmp = path.join(ROOT, 'lib', '.wb-project-split.MUT-' + mutations.indexOf(mu) + '.mjs')
     try {
       fs.writeFileSync(tmp, mutSrc, 'utf8')
-      const MM = await import(pathToFileURL(tmp).href + '?v=' + Date.now())
+    const MM = await import(pathToFileURL(tmp).href + '?m=' + mutations.indexOf(mu) + '-' + process.pid + '-' + Date.now())
       if (mu.probe(MM)) { detected++; console.log('  ok - 变异被检出：' + mu.name) }
       else console.log('  FAIL - 变异未被检出：' + mu.name)
     } finally {
