@@ -11,6 +11,19 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+
+// ★2026-11-11（本机 Windows 实测）：junction 可建，但 type=file 的**文件链接**在未开
+//   「开发者模式」的 Windows 上必抛 EPERM。③ 段整段依赖文件链接 ⇒ 缺守卫会整片红。
+const CAN_LINK_FILE = (() => {
+  let d = ''
+  try {
+    d = fs.mkdtempSync(path.join(os.tmpdir(), 'v21f-'))
+    fs.writeFileSync(path.join(d, 's'), 'x')
+    try { fs.symlinkSync(path.join(d, 's'), path.join(d, 't'), 'file') } catch (_) { return false }
+    return fs.lstatSync(path.join(d, 't')).isSymbolicLink()
+  } catch (_) { return false } finally { try { if (d) fs.rmSync(d, { recursive: true, force: true }) } catch (_) {} }
+})()
+console.log('[0] 平台能力：可创建文件链接 = ' + CAN_LINK_FILE + (CAN_LINK_FILE ? '' : '（③ 段降级为 SKIP）'))
 import { apply, API, MemoryEngine } from '../lib/audit-engine.mjs'
 import { canonPath, pathKey, withinRoot, fileWithinRoots } from '../../lib/file-boundary.js'
 import { validateSettingsPaths } from '../../lib/settings-safety.js'
@@ -97,6 +110,7 @@ try {
 
   console.log('\n══ ③ #236 canonicalScopeGuard —— 相邻同前缀越界链接（真 import 真调用，4 案）══')
   {
+    if (!CAN_LINK_FILE) { console.log('  skip - 本机不可创建文件链接（Windows 需开发者模式/管理员）'); } else {
     const base = path.join(tmp, 'c236'); fs.mkdirSync(base, { recursive: true })
     const ws = path.join(base, 'workspace'), wsOther = path.join(base, 'workspace-other'), elsewhere = path.join(base, 'elsewhere')
     for (const d of [ws, wsOther, elsewhere]) fs.mkdirSync(d, { recursive: true })
@@ -131,6 +145,7 @@ try {
     fs.writeFileSync(path.join(sidecarDir, sha(Buffer.from(canonicalize(d3), 'utf8')) + '.json'), JSON.stringify(s3.sidecar))
     const g3 = canonicalScopeGuard(c3.sources[0], s3.sidecar.sourceFile)
     ok(g3.ok === true, '③ 树内合法链接必过：同目录链接 ⇒ ok', g3)
+    }
   }
 
   console.log('\n══ ④ #228 /file 路由 + fileQ —— 真注册真调用真 IO（真实 engine 解析）══')
@@ -201,6 +216,7 @@ try {
 
   console.log('\n══ ④b fileQ（白板面板取文）—— 真构造 engine + 越界链接 ══')
   {
+    if (!CAN_LINK_FILE) { console.log('  skip - 本机不可创建文件链接（Windows 需开发者模式/管理员）'); } else {
     const home = path.join(tmp, 'h228q')
     const projectDir = path.join(home, 'memory', 'workspaces', 'ws-q')
     const handoffDir = path.join(projectDir, 'handoff')
@@ -229,6 +245,7 @@ try {
     const q3 = await engine.handoffPanelData('archive/../PLAN.md')
     ok(q3.error === 'bad file name', '④b 越界必拒：非白名单名 ⇒ bad file name（既有契约不变）', q3)
     process.env.DSH_HOME = oldEnv
+    }
   }
 
   console.log('\n══ ⑤ #229 皮肤安装名 + 落点（双处，真调用 install 路由）══')

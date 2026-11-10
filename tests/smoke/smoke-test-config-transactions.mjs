@@ -18,6 +18,19 @@ import assert from 'node:assert/strict'
 import { AsyncResource } from 'node:async_hooks'
 import { mkdtemp, writeFile, readFile, rm, mkdir, symlink } from 'node:fs/promises'
 import { tmpdir, hostname } from 'node:os'
+
+// ★2026-11-11（本机 Windows 实测）：junction 可建，但 type=file 的**文件链接**在未开
+//   「开发者模式」的 Windows 上必抛 EPERM ⇒ ⑤ 段缺守卫会整片红。
+const CAN_LINK_FILE_TXN = await (async () => {
+  let d = ''
+  try {
+    d = await mkdtemp(path.join(tmpdir(), 'cfgf-'))
+    await writeFile(path.join(d, 's'), 'x')
+    try { await symlink(path.join(d, 's'), path.join(d, 't'), 'file') } catch (_) { return false }
+    return true
+  } catch (_) { return false } finally { try { if (d) await rm(d, { recursive: true, force: true }) } catch (_) {} }
+})()
+console.log('[0] 平台能力：可创建文件链接 = ' + CAN_LINK_FILE_TXN)
 import path from 'node:path'
 import { fork, spawn } from 'node:child_process'
 import { once } from 'node:events'
@@ -112,6 +125,7 @@ try {
   console.log('PASS: corrupt configuration is refused and preserved byte-for-byte')
 
   /* ── ⑤ 负路径：配置文件为符号链接 ⇒ 锁原语拒绝，链接目标不被改写 ── */
+  if (!CAN_LINK_FILE_TXN) { console.log('  skip - 本机不可创建文件链接（Windows 需开发者模式/管理员）'); } else {
   const target = path.join(home, 'real-config.json')
   const linkPath = path.join(home, 'linked-config.json')
   await writeFile(target, JSON.stringify(baseline))
@@ -120,6 +134,7 @@ try {
   await assert.rejects(withConfigLock(linkPath, async () => {}), /config-file-symlink refused/)
   assert.equal(JSON.parse(await readFile(target, 'utf8')).locale, 'zh', 'symlink target must be untouched')
   console.log('PASS: symlinked configuration file is refused and its target is untouched')
+  }
 
   /* ── ⑥ 负路径：活持有者 ⇒ 超时拒绝；死持有者 ⇒ 可回收 ── */
   const exited = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' })

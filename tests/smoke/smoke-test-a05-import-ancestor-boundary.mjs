@@ -45,6 +45,22 @@ const canLink = (() => {
     return okNow
   } catch (_) { return false }
 })()
+
+// ★2026-11-11（本机 Windows 实测）：**目录链接 ≠ 文件链接**。junction/dir 型可直接创建，
+//   而 type=file 在未开「开发者模式」的 Windows 上必抛 EPERM。原 canLink 只探目录 ⇒
+//   需要文件链接的段（E5 CALENDAR.md）守卫失效 ⇒ 未捕获 EPERM ⇒ 整个套件红。
+//   单独探测文件链接能力；不可用则相关段 SKIP（打印理由，绝不当通过）。
+const canLinkFile = (() => {
+  try {
+    const t = mkdtempSync(path.join(tmpdir(), 'a05-fprobe-'))
+    writeFileSync(path.join(t, 'src.md'), 'x')
+    try { symlinkSync(path.join(t, 'src.md'), path.join(t, 'lnk.md'), 'file') } catch (_) { return false }
+    const okNow = lstatSync(path.join(t, 'lnk.md')).isSymbolicLink()
+    rmSync(t, { recursive: true, force: true })
+    return okNow
+  } catch (_) { return false }
+})()
+console.log('[0] 平台能力：可创建**文件**链接 = ' + canLinkFile + (canLinkFile ? '' : '（文件链接段降级为 SKIP，绝不当通过）'))
 console.log('[0] 平台能力：可创建目录链接 = ' + canLink + (canLink ? '' : '（相关段降级为 SKIP，绝不当通过）'))
 
 // ─────────────────────────────────────────────────────────────
@@ -264,7 +280,7 @@ if (!engine) {
 
   // ── E5：用户级 CALENDAR.md 链接 ⇒ 拒写（拒读不拒写悖论已修）
   console.log('\n[E5] 负路径④：用户级 CALENDAR.md 指向根外 ⇒ 拒写且回执可见')
-  if (!canLink) { console.log('  skip - 本机不可创建目录链接'); }
+  if (!canLinkFile) { console.log('  skip - 本机不可创建**文件**链接（Windows 需开发者模式/管理员）') }
   else {
     const userDir = engine.userDirOf()
     mkdirSync(userDir, { recursive: true })
