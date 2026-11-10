@@ -4,6 +4,7 @@
 // 首回合注入早于 rt.projectTag 写入 ⇒ 首屏身份会回落工作区根。D1 用 pending 表 + 读侧懒回填修这个时点缺口。
 // 纪律：模块断言配真负控（变异必须被检出），接线断言配「变异副本必须判红」。
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, unlinkSync, utimesSync, mkdirSync } from 'node:fs'
+import crypto from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -193,6 +194,30 @@ try {
     // 顺序/短路：反查必须在 pending 之后（否则 pending 的 TTL 语义被绕过）
     ok(seg.indexOf('pendingIdentityForSession(sidPend)') < seg.indexOf('recoverProjectTagForSessionPre'),
       '[8] ★优先级：pending 先于 done 记录反查（切片内相对位置）')
+
+    // ★2026-11-10 真机验证抓到的缺陷：同一 `to` 可能有多条记录（重试/重复接续）。
+    //   旧实现 `byTarget.set(rec.to, rec)` 在 picked 按 mtime 从新到旧排序后，会让**更旧**的覆盖**更新**的；
+    //   若较新那条带 tag、较旧那条无 tag ⇒ 命中 null，归属静默丢失。判据：必须取**最新**那条。
+    {
+      const sub9 = path.join(dir, 'dup-to')
+      mkdirSync(sub9, { recursive: true })
+      const cf9 = path.join(sub9, 'auto-continue.json')
+      const dd9 = path.join(sub9, 'auto-continue-done.d')
+      mkdirSync(dd9, { recursive: true })
+      const sha9 = (s) => crypto.createHash('sha256').update(s).digest('hex')
+      const T9 = 'session-dup-target-9'
+      // A：带 tag（较新）；B：无 tag（较旧）
+      const pA = path.join(dd9, sha9('srcA9') + '.json')
+      const pB = path.join(dd9, sha9('srcB9') + '.json')
+      writeFileSync(pA, JSON.stringify({ from: 'srcA9', to: T9, projectTag: 'proj-newest', at: 1794300000000 }))
+      writeFileSync(pB, JSON.stringify({ from: 'srcB9', to: T9, projectTagMissing: true, at: 1794300000001 }))
+      const nowSec = Date.now() / 1000
+      utimesSync(pA, nowSec, nowSec)
+      utimesSync(pB, nowSec - 100, nowSec - 100)
+      const dup = CI2.recoverProjectTagForSessionPre(cf9, T9)
+      ok(dup && dup.projectTag === 'proj-newest',
+        '[8] ★同一 to 多条记录 ⇒ 必须取最新那条（旧实现会被更旧的无 tag 记录覆盖成 null）', dup)
+    }
   }
 
 console.log('\n[continue-identity-pending] PASS ' + pass + ' / FAIL ' + fail)
