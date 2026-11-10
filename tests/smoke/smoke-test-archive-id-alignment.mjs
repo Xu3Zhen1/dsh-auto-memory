@@ -13,7 +13,7 @@
  *      并证明「取 canonical 与取 header.id」在本机真实样本上确实不同（否则 A 是空修的）。
  *   负控：把 target 改回 c.id，A 必须红；行为侧用真实目录样本，空集不算通过。
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import assert from 'node:assert/strict'
@@ -23,7 +23,12 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 const HOST = fileURLToPath(new URL('../../lib/index.js', import.meta.url))
 const host = readFileSync(HOST, 'utf8').replace(/\r\n/g, '\n')
-const HUB = 'C:/Users/ZHAN_ZC/.dsh/sessions/--C-Users-ZHAN_ZC-.dsh-aik_auto_memory_use--'
+// ★2026-11-10 修：HUB 指向**本机真实会话目录**，CI 上不存在 ⇒ readdirSync 直接 ENOENT 崩。
+//   这里不再硬编码用户名：用 USERPROFILE/HOME 拼出同一路径；若目录不存在，[2] 段显式 SKIP
+//   （打印 SKIP 并 exit 0 —— 不伪造绿，也不把「没有样本」误报成失败）。
+const HOME_DIR = process.env.USERPROFILE || process.env.HOME || ''
+const HUB = HOME_DIR ? path.join(HOME_DIR, '.dsh', 'sessions', '--C-Users-ZHAN_ZC-.dsh-aik_auto_memory_use--') : ''
+const HUB_OK = !!HUB && existsSync(HUB)
 
 let pass = 0, fail = 0
 const t = (n, c, x) => { if (c) { pass++; console.log('  PASS ' + n) } else { fail++; console.log('  FAIL ' + n, x === undefined ? '' : JSON.stringify(x)) } }
@@ -52,7 +57,11 @@ console.log('[1] 结构：rows 带 archiveId，归档调用用 archiveId')
 }
 
 console.log('[2] 行为：_sessionHeaderOfDir 在真实会话目录上取到 header.id')
-{
+if (!HUB_OK) {
+  // ★2026-11-10：样本目录不可达（CI/他机没有本机会话目录）⇒ 显式 SKIP。
+  //   SKIP 必须是可见的一行，且不伪装成 PASS；此类断言依赖本机真实数据，属结构性不可移植。
+  console.log('  SKIP [2] 本机会话目录不可达: ' + (HUB || '(HOME 未设置)'))
+} else {
   const fnSrc = extract(host, '_sessionHeaderOfDir(dirPath) {')
   const fn = new Function('readdirSync', 'readFileSync', 'path', 'decodeZstdFramesHead',
     'return (function _sessionHeaderOfDir(dirPath) ' + fnSrc.slice(fnSrc.indexOf('{')) + ')'
@@ -73,6 +82,5 @@ console.log('[2] 行为：_sessionHeaderOfDir 在真实会话目录上取到 hea
   t('★能读到 header.id 的比例 > 90%', got / segs.length > 0.9, { got, total: segs.length })
   t('★★本机样本中 header.id 与 canonical 不同的比例 > 90%（证明该修法确实必要）', diffs / segs.length > 0.9, { diffs, total: segs.length, samples })
 }
-
 console.log('\n结果: PASS=' + pass + ' FAIL=' + fail)
 process.exit(fail ? 1 : 0)

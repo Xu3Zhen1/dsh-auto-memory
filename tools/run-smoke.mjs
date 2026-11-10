@@ -391,11 +391,16 @@ async function main() {
   }
 
   const jobs = Math.max(1, Math.min(16, opts.jobs || 1))
-  const lanePlan = opts.lanes ? splitLanes(suites) : { heavy: [], light: suites }
+// ★2026-11-10 修：分道「是否生效」必须只有一个判据。
+//   缺陷：:398 只判 `opts.lanes` 就打印「双车道 240000ms」，而 :440 又用 `jobs === 1` 静默取消分道
+//   ⇒ CI 传 `--jobs=1` 时日志声称分道、实际全走 90000ms 单池，最长套件（v3314 实测 161s）必 TIMEOUT。
+//   现把判据收敛到 lanesActive 一处，打印与执行共用它，杜绝「日志说的 ≠ 实际做的」。
+const lanesActive = !!opts.lanes && jobs !== 1
+const lanePlan = lanesActive ? splitLanes(suites) : { heavy: [], light: suites }
   console.log('[run-smoke] ' + suites.length + ' suite(s) in tests/smoke, per-suite timeout='
     + (opts.timeoutMs > 0 ? opts.timeoutMs + 'ms' : 'disabled')
     + ', ' + (jobs === 1 ? 'sequential (never parallel)' : 'parallel x' + jobs))
-  if (opts.lanes) {
+if (lanesActive) {
     const heavySum = lanePlan.heavy.reduce((a, n) => a + (HEAVY_MS[n] || 0), 0) / 1000
     console.log('[run-smoke] 双车道: 重车道 ' + lanePlan.heavy.length + ' 套件 x' + opts.heavyJobs + ' (timeout=' + opts.heavyTimeoutMs + 'ms)'
       + '（实测合计 ' + heavySum.toFixed(0) + 's）; 轻车道 ' + lanePlan.light.length + ' 套件/并行 x' + jobs)
@@ -424,22 +429,29 @@ async function main() {
   }
 
   /** 有界工作池：固定 jobs 个 worker 从同一下标游标取任务，天然限流、无第三方依赖。 */
-  const runPool = async (list, width, timeoutMs) => {
+// ★2026-11-10：`timeoutMs` 允许传函数 `(name) => ms`，让「已实测的重负载套件」在任何模式下
+//   都拿到自己的预算，而不是被 --timeout 一刀切。这样 `--jobs=1`（CI 现用）不再把 161s 的
+//   v3314 压进 90s 而制造 TIMEOUT——那是**运行器缺陷**，不是套件缺陷。
+const runPool = async (list, width, timeoutMs) => {
+  const timeoutFor = (name) => (typeof timeoutMs === 'function' ? timeoutMs(name) : timeoutMs)
     let cursor = 0
     const worker = async () => {
       for (;;) {
         const i = cursor++
         if (i >= list.length) return
-        const r = await runSuite(path.join(SMOKE_DIR, list[i]), timeoutMs)
+      const r = await runSuite(path.join(SMOKE_DIR, list[i]), timeoutFor(list[i]))
         report(r)
       }
     }
     await Promise.all(Array.from({ length: Math.min(width, list.length) }, () => worker()))
   }
 
-  if (!opts.lanes || jobs === 1) {
+if (!lanesActive) {
     // 分道关闭（或单并发）：原行为——整个集合走一个池子（jobs=1 时即逐字节等价串行）。
-    await runPool(suites, jobs, opts.timeoutMs)
+    // ★2026-11-10：单一池子也按套件取预算 —— 已实测的重负载套件用 heavyTimeoutMs，
+    //   其余用 opts.timeoutMs。否则 `--jobs=1`（CI 当前配置）会让 v3314（实测 161s）
+    //   在 90s 处被杀，红因是运行器参数而非套件本身。
+    await runPool(suites, jobs, (name) => (HEAVY_MS[name] !== undefined ? opts.heavyTimeoutMs : opts.timeoutMs))
   } else {
     // ★双车道：重车道与轻车道**同时**开跑，各自独立限流。
     //   重车道默认串行（heavyJobs=1）⇒ 互不抢占，墙钟回到单跑量级；
