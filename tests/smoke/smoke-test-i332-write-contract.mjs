@@ -41,13 +41,16 @@ ok(/indexStale/.test(BRANCH), '① 抽取段含 indexStale 判定（正文/索�
 ok(/gateH\.truncated/.test(BRANCH), '① 抽取段含账本截断告警（A-2）')
 
 // ── 可执行壳：注入替身（真源片段 + 受控写入器）──
-function makeRunner(branch) {
-  const factory = new Function('sanitizeForWrite', 'writeGateRefusalTextPre', 'nowHm',
+function makeRunner(branch, claimNote = '') {
+  // ★注入表必须覆盖「抽取段方法体引用到的全部外部符号」，否则 new Function 里会抛
+  //   ReferenceError 而断言只会表现为莫名失败（#i332 2026-11-10 实测：projectClaimNote 漏注入）。
+  //   抽取段 = :19580..:19617，其中 :19615 引用 projectClaimNote，而它在 :19554 声明于段外。
+  const factory = new Function('sanitizeForWrite', 'writeGateRefusalTextPre', 'nowHm', 'projectClaimNote',
     'return async function (args, engine, p) {' + branch + '\n}')
   const sanitizeForWrite = (t, o) => ({ ok: true, clean: t, truncated: false })
   const writeGateRefusalTextPre = (n, g) => (n + ': ' + ((g && g.reason) || 'gate'))
   const nowHm = () => '16:00'
-  const fn = factory(sanitizeForWrite, writeGateRefusalTextPre, nowHm)
+  const fn = factory(sanitizeForWrite, writeGateRefusalTextPre, nowHm, claimNote)
   return (args, engine) => fn(args, engine, { projectDir: 'D:\\proj' })
 }
 
@@ -119,6 +122,15 @@ function baseEngine(over = {}) {
   const run = makeRunner(BRANCH)
   const r = await run({ kind: 'handoff', content: '## 任务状态\n- x' }, baseEngine())
   ok(/交接账本已写入/.test(r) && /h\.md/.test(r), '⑥ handoff 成功回执照写路径', JSON.stringify(r).slice(0, 80))
+  // ★覆盖缺口（2026-11-10 补）：`projectClaimNote` 是抽取段 :19615 唯一引用的**段外符号**
+  //   （声明在 :19554）。此前注入表漏了它 ⇒ new Function 抛 ReferenceError，
+  //   而**没有任何断言检查「认领提示是否被拼接进回执」**，所以删掉该引用也不会红（实测确认）。
+  //   这里补两条：有认领时必须出现提示、无认领时不得出现。
+  const withClaim = makeRunner(BRANCH, '（已认领项目 pkg-a，本会话白板注入将优先读 handoff/projects/pkg-a.md）')
+  const rClaim = await withClaim({ kind: 'handoff', content: '# 账本\n\n## 任务状态\n内容足够长足够长\n\n## 目标\n内容\n\n## 已试方案与失败原因\n内容\n\n## 进度与下一步\n内容' }, baseEngine())
+  ok(/已认领项目 pkg-a/.test(rClaim), '⑥★认领提示被拼接进回执（段外符号 projectClaimNote 真被消费）', JSON.stringify(rClaim).slice(0, 110))
+  const rNoClaim = await makeRunner(BRANCH)({ kind: 'handoff', content: '# 账本\n\n## 任务状态\n内容足够长足够长\n\n## 目标\n内容\n\n## 已试方案与失败原因\n内容\n\n## 进度与下一步\n内容' }, baseEngine())
+  ok(!/已认领项目/.test(rNoClaim), '⑥★负路径：无认领时不得出现认领提示（防无条件拼接）', JSON.stringify(rNoClaim).slice(0, 110))
   ok(!/截断/.test(r), '⑥ 负路径：未截断时不得出现截断告警')
 }
 

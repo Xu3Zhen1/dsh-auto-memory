@@ -90,7 +90,7 @@ t('A1 graph 档工具数 = 19(13 旧 + 2 遍历 + 1 ? + T4 + P9 + M8-B) —— �
   const names = bg.tools.map((x) => x.name)
   assert(names.includes('memory_expand'), 'graph 档必须注册 memory_expand(修 BUG-1: 此前闸门恒假, 永不注册)')
   assert(names.includes('memory_trace'), 'graph 档必须注册 memory_trace')
-  assert(bg.tools.length === 19, 'graph 档工具数应为 19, 实为 ' + bg.tools.length + ': ' + names.join(','))
+  assert(bg.tools.length === 20, 'graph 档工具数应为 20, 实为 ' + bg.tools.length + ': ' + names.join(','))
 })
 t('A2 两遍历工具契约完整(parameters.id/tag + execute 是函数)', () => {
   const ex = bg.tools.find((x) => x.name === 'memory_expand')
@@ -217,7 +217,7 @@ t('D1 legacy 档工具数 = 17(与 graph 档 19 形成对照, 证明闸门真的
   const bl = bootPre('legacy')
   try {
     const names = bl.tools.map((x) => x.name)
-    assert(bl.tools.length === 17, 'legacy 档必须仍为 17 工具(15 + T4 memory_procedure + P9 memory_rules + M8-B memory_procedure_list), 实为 ' + bl.tools.length)
+    assert(bl.tools.length === 18, 'legacy 档必须仍为 18 工具(15 + T4 memory_procedure + P9 memory_rules + M8-B memory_procedure_list), 实为 ' + bl.tools.length)
     assert(!names.includes('memory_expand'), 'legacy 档不得注册 memory_expand')
     assert(!names.includes('memory_trace'), 'legacy 档不得注册 memory_trace')
     // T4 工具**不属**白板闸门 ⇒ legacy 档也必须在场(反向保证:别把它错当 graph-only)
@@ -228,7 +228,7 @@ t('D1 legacy 档工具数 = 17(与 graph 档 19 形成对照, 证明闸门真的
 t('D2 非法档位值 fail closed → legacy(17), 绝不猜 graph', () => {
   const bx = bootPre('bogus-mode')
   try {
-    assert(bx.tools.length === 17, '非法值必须回落 legacy(17), 实为 ' + bx.tools.length)
+    assert(bx.tools.length === 18, '非法值必须回落 legacy(18), 实为 ' + bx.tools.length)
   } finally { cleanup(bx) }
 })
 

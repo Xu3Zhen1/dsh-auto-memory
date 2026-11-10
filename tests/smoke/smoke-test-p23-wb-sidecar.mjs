@@ -132,11 +132,13 @@ t('M9 P3 两工具条件注册 + 工具数闸门(legacy 17 / graph 19)', async (
   // ★ T4(2026-09-19): 16 → 17(新增 memory_procedure, 无条件注册)。
   for (const f of ['tests/smoke/smoke-test.mjs', 'tests/smoke/smoke-test-m3b3.mjs', 'tests/smoke/smoke-test-context-observer.mjs']) {
     const s = await readFile(f, 'utf8')
-    assert.ok(/!==\s*19/.test(s), f + ' 默认档已翻 graph ⇒ 工具数硬锁应为 19(含 T4 memory_procedure + P9 memory_rules + M8-B memory_procedure_list)')
+    assert.ok(/!==\s*20/.test(s), f + ' 默认档已翻 graph ⇒ 工具数硬锁应为 20(含 T4 memory_procedure + P9 memory_rules + M8-B memory_procedure_list)')
   }
-  // graph 档 17 的断言在 smoke-test-graph-mode-pre.mjs
+  // graph 档的断言在 smoke-test-graph-mode.mjs
+  // ★2026-11-10：19 → 20（`53f30c0e` 新增 memory_whoiam 后工具数漂移；本锁是「联动」断言，
+  //   必须与 graph-mode 套件里的实际硬锁值同步，否则一处改了另一处仍锁旧值）。
   const g = await readFile('tests/smoke/smoke-test-graph-mode.mjs', 'utf8')
-  assert.ok(/!==\s*19/.test(g) || /=== *19/.test(g), 'graph 档工具数 19 有独立断言')
+  assert.ok(/!==\s*20/.test(g) || /=== *20/.test(g), 'graph 档工具数 20 有独立断言')
 })
 
 t('M10 GUI 一键切换: 设置页与接续面板双入口, 同一配置键 boardMode, 默认档旧行为', async () => {
