@@ -23,7 +23,7 @@ import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import {
   parseModelWindowsPre, pickWindowPre, findOfficialContextWindowPre, findSessionModelPre,
-  scanPressureSignalsPre, shouldArmAutoContinuePre, reusableWindowCachePre, sessionModelSigPre,
+  scanPressureSignalsPre, shouldArmAutoContinuePre, reusableWindowCachePre, sessionModelSigPre, armEligiblePre,
   // ★issue #451：checkWaterLevel 新增两个引用符号（代理压缩兜底）。本套件 strictInjection 会拦漏注入。
   detectProxyCompactionPre, resolveProxyUsagePre,
 } from '../../lib/water-window.js'
@@ -234,8 +234,10 @@ console.log('[switch-decouple] D1b 行为:接续资格只看 autoContinueEnabled
     _autoContState: {},
     runtimeFor: () => ({}),
   }
+  // ★2026-11-10 补 armEligiblePre：arm 闸与 checkWaterLevel 共用该判据（index.js:6120），
+  //   漏注入 ⇒ ReferenceError 被 try 吞掉 ⇒ 永远不落 armed（断言红得莫名其妙）。
   const arm = bindMethod('armAutoContinue(agent, wl, opts = null) {', eng, {
-    diag: () => {}, shouldArmAutoContinuePre,
+    diag: () => {}, shouldArmAutoContinuePre, armEligiblePre,
   })
   arm({ session: { id: 'session-arm' } }, { ratio: 0.95, tokens: 950, window: 1000, source: 'manual', modelKnown: true, hard: false })
   ok(!!(eng._autoContState && eng._autoContState.armed), 'armAutoContinue 在白板关时代照常落 armed(闸不再被白板开关挡住)')
@@ -300,6 +302,9 @@ const wlBind = (fake) => {
     //   漏注入会 throw（而非静默 ReferenceError）。这里注入真实实现：本机没有该插件 ⇒ 探测恒"absent"、
     //   兜底恒不生效 ⇒ 本套件所验证的「白板关仍测量」语义与修复前逐字节一致。
     detectProxyCompactionPre, resolveProxyUsagePre,
+    // ★2026-11-10 补：checkWaterLevel 在改为共用判据后引用 armEligiblePre（water-window.js:565），
+    //   本套件 strictInjection=true ⇒ 漏注入会 throw。注入**真实实现**（非桩），保持语义与生产一致。
+    armEligiblePre,
   }, { strictInjection: true })
 }
 // 会话事件里带真实模型(request/header)→ 白板关时这个「模型已知」也必须有地方落下去
@@ -401,7 +406,9 @@ console.log('[switch-decouple] D4 接线:两页共用同一对配置键 + 默认
   //   旧锚点字面量 `[switchCard` 不再逐字存在 ⇒ indexOf = -1 ⇒ 断言假红。
   //   判据本身不变: switchCard 必须**先于**早退分支出现(即定义在早退之前, 默认关也能渲染它)。
   const planTab = extractFnIn(CSRC, 'function PlanTab() {')
-  const earlyReturnIdx = planTab.indexOf('return h(\'div\', null, [switchCard, h(Card, { title: t(\'planTitle\') }')
+  // ★2026-11-10 修：client.js:8434 实际字面量已变为 `[switchCard, acRulesCard, h(Card, ...)]`（新增 acRulesCard），
+  //   旧锚点漏了它 ⇒ indexOf=-1 ⇒ 假红。判据语义不变：switchCard 必须**先于**早退分支出现。
+  const earlyReturnIdx = planTab.indexOf("return h('div', null, [switchCard, acRulesCard, h(Card, { title: t('planTitle')")
   ok(planTab.indexOf('switchCard') >= 0 && earlyReturnIdx >= 0 && planTab.indexOf('switchCard') < earlyReturnIdx,
     '白板页:开关卡先于「未启用」分支渲染(默认关闭状态下仍可打开)')
   // 2026-09-14 补:上面那条只证明「开关卡定义在早退分支之前」,对**已启用**分支不构成约束 ——
@@ -410,7 +417,9 @@ console.log('[switch-decouple] D4 接线:两页共用同一对配置键 + 默认
   // ★2026-09-22 更新锚点:该末尾返回的 div 多了一个属性(`data-dam-flow`,大屏卡片流分列标记),
   //   旧锚点字面量 `return h('div', null, [switchCard]` 不再逐字存在 ⇒ 断言假红。
   //   判据本身不变: 末尾返回必须**无条件**把 switchCard 并进 rows 之前(白板开着也能从本页关掉)。
-  ok(/return h\('div', \{[^}]*\}, \[switchCard\]\.concat\(rows\)\)/.test(planTab),
+  // ★2026-11-10 修：client.js:8574 实际为 `[switchCard, acRulesCard].filter(Boolean).concat(rows)`，
+  //   旧锚点写死 `[switchCard].concat(rows)` ⇒ 假红。判据语义不变：末尾返回必须**无条件**并入 switchCard。
+  ok(/return h\('div', \{[^}]*\}, \[switchCard, acRulesCard\]\.filter\(Boolean\)\.concat\(rows\)\)/.test(planTab),
     '白板页:开关卡在「已启用」分支同样渲染(白板开着也能从本页关掉)')
   // 设置页保存不得再 POST 整份快照(宿主端是合并语义,整份快照会把别的入口期间的改动回滚)
   ok(!/saveConfigPatch\(cfg,/.test(CSRC), '设置页保存不再整份快照 POST(旧写法会把其它入口的改动回滚)')

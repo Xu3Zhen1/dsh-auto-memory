@@ -191,7 +191,7 @@ if (process.env.V3314_CHILD !== '1') {
 
   // M1：probe 上限退回写死 30s（复刻 v3.3.13 之前的代码）
   await runMutant('M1 probe 上限退回写死',
-    "const probeSec = Number(this.config.autoContinueProbeTimeoutSeconds)\r\n    const probeCapMs = (probeSec >= 10 && probeSec <= 300 ? probeSec : DEFAULT_AUTO_CONTINUE_PROBE_TIMEOUT_SECONDS) * 1000",
+    "const probeSec = Number(this.config.autoContinueProbeTimeoutSeconds)\n    const probeCapMs = (probeSec >= 10 && probeSec <= 300 ? probeSec : DEFAULT_AUTO_CONTINUE_PROBE_TIMEOUT_SECONDS) * 1000",
     "const probeCapMs = 30000", 'M1', 'AB')   // M1 的判据在 B2（耗时越界）⇒ 跑完 A+B 即可
 
   // M2：默认总超时退回 90

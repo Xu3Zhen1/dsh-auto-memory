@@ -245,7 +245,9 @@ async function openGuide() {
 
 // ───────────────────────── ⑥ 同批 #441 / #426 的前端判据（真渲染面已在其余套件覆盖，此处钉计数） ─────────────────────────
 {
-  eq((source.match(/!res\.ok \|\| \(j && j\.ok === false\)/g) || []).length, 2, '#441 res.ok 判据在 classic + v4 两面（少一处即半修）')
+  // ★2026-11-10 修：原写 `=== 2` 把「至少两处」钉成「恰好两处」——新增调用点（client.js:8885/8963/16846 三处）
+  //   是**更完整**而不是回归。判据原意见注释「少一处即半修」⇒ 改为 >= 2（下限门，不因新增而假红）。
+  eq((source.match(/!res\.ok \|\| \(j && j\.ok === false\)/g) || []).length >= 2, true, '#441 res.ok 判据在 classic + v4 两面（少一处即半修）')
   const guard = "!p.observationOnly && p.stage === 'validated' && !(p.requiresApproval && !p.approved)"
   eq(source.split(guard).length - 1, 3, '#426 激活判据在 client.js 三面（classic 手写 + legacy 镜像 + v4）')
   const frozen = readFileSync(path.join(ROOT, 'skins', 'legacy', 'iter5-325.js.frozen'), 'utf8')

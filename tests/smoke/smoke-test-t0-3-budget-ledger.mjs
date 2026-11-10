@@ -283,7 +283,9 @@ console.log('[T0-3-11] 接线守卫：index.js 的限额是推导的、优先级
     '注入文本只带内容类降级（诊断类留 meta）')
   // 分派：最该保的两段必须是 must，日志必须是 low
   ok(/'user-memory'[\s\S]{0,120}'must'\)/.test(code), '★user-memory 标为 must（用户级跨项目规则）')
-  ok(/'project-notes'[\s\S]{0,160}'must'\)/.test(code), '★project-notes 标为 must')
+  // ★2026-11-10 修：断言窗口 160 字符过窄 —— 实参含 stripSensitiveSections(sanitizeForInjection(...)) 嵌套，
+  //   从 'project-notes' 到 'must' 实测距离 186 ⇒ 窗口放宽到 260（判据语义不变：仍要求该段标 must）。
+  ok(/'project-notes'[\s\S]{0,260}'must'\)/.test(code), '★project-notes 标为 must')
   ok(/'recent-logs'[\s\S]{0,120}'low'\)/.test(code), 'recent-logs 标为 low（先丢）')
   ok(/'frame-head'[\s\S]{0,80}'must'\)/.test(code) && /'frame-tail'[\s\S]{0,80}'must'\)/.test(code),
     '块首/块尾框架行标为 must（不可丢）')

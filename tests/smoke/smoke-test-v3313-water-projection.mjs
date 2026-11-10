@@ -172,7 +172,10 @@ if (process.env.V3313_CHILD !== '1') {
   const realCl = await fs.readFile(new URL('../../lib/client.js', import.meta.url), 'utf8')
 
   // M1：else 分支退回「不写三字段」（复刻 v3.3.11 原状）
-  const M1_FROM = `          meterViaProxy: false,\r\n          estimatedTokens: 0,\r\n          realUsageTokens: 0,\r\n`
+  // ★2026-11-10 修：lib/index.js 是 LF 行尾，锚点却写死 \r\n ⇒ 0 命中、变异从未执行（判据长期假绿）。
+  //   改为按目标文件真实行尾构造锚点，避免再次因行尾漂移而静默失效。
+  const EOL = realIdx.includes('\r\n') ? '\r\n' : '\n'
+  const M1_FROM = ['          meterViaProxy: false,', '          estimatedTokens: 0,', '          realUsageTokens: 0,', ''].join(EOL)
   const muts = [
     ['M1 else 分支三字段被删（复刻 v3.3.11）', path.join(ROOT_IDX), realIdx, M1_FROM, '', 'IDX'],
     ['M2 前端门控被去掉', path.join(ROOT_CL), realCl, "wl.meterViaProxy === true ?", "true ?", 'CL'],
