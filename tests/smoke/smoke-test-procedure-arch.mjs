@@ -16,7 +16,9 @@
  */
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
-const ROOT = 'G:/AMup/dsh-auto-memory/lib'
+// ★2026-11-10 修：原先硬编码本机绝对路径 ⇒ CI 上 ENOENT。改用 import.meta.url 相对定位。
+import { fileURLToPath } from 'node:url'
+const ROOT = fileURLToPath(new URL('../../lib', import.meta.url))
 const store = readFileSync(ROOT + '/procedure-store.js', 'utf8').replace(/\r\n/g, '\n')
 const idx = readFileSync(ROOT + '/index.js', 'utf8').replace(/\r\n/g, '\n')
 const hub = readFileSync(ROOT + '/memory-hub.js', 'utf8').replace(/\r\n/g, '\n')

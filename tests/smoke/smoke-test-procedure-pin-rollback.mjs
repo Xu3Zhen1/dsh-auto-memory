@@ -13,7 +13,9 @@
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 
-const STORE = 'G:/AMup/dsh-auto-memory/lib/procedure-store.js'
+// ★2026-11-10 修：原先硬编码本机绝对路径 ⇒ CI 上 ENOENT。改用 import.meta.url 相对定位。
+import { fileURLToPath } from 'node:url'
+const STORE = fileURLToPath(new URL('../../lib/procedure-store.js', import.meta.url))
 const store = readFileSync(STORE, 'utf8').replace(/\r\n/g, '\n')
 
 let pass = 0, fail = 0

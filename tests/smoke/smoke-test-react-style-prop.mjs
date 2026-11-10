@@ -15,7 +15,9 @@
 import { readFileSync } from 'node:fs'
 const NL = String.fromCharCode(10)
 const BT = 96
-const CLIENT = 'G:/AMup/dsh-auto-memory/lib/client.js'
+// ★2026-11-10 修：原先硬编码本机绝对路径 ⇒ CI 上 ENOENT。改用 import.meta.url 相对定位。
+import { fileURLToPath } from 'node:url'
+const CLIENT = fileURLToPath(new URL('../../lib/client.js', import.meta.url))
 const src = readFileSync(CLIENT, 'utf8').split(String.fromCharCode(13) + NL).join(NL)
 let pass = 0, fail = 0
 const ok = (c, m) => { if (c) { pass++; console.log('  PASS ' + m) } else { fail++; console.log('  FAIL ' + m) } }

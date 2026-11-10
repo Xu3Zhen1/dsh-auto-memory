@@ -18,7 +18,10 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 import assert from 'node:assert/strict'
 
-const HOST = 'G:/AMup/dsh-auto-memory/lib/index.js'
+// ★2026-11-10 修：原先硬编码本机绝对路径 ⇒ CI 上任何机器都 ENOENT（2026-11-02 归因的 A 类）。
+//   改用 import.meta.url 相对定位：测试文件位于 <repo>/tests/smoke/，故 ../../lib/index.js。
+import { fileURLToPath } from 'node:url'
+const HOST = fileURLToPath(new URL('../../lib/index.js', import.meta.url))
 const host = readFileSync(HOST, 'utf8').replace(/\r\n/g, '\n')
 const HUB = 'C:/Users/ZHAN_ZC/.dsh/sessions/--C-Users-ZHAN_ZC-.dsh-aik_auto_memory_use--'
 
