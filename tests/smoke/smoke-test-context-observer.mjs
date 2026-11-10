@@ -419,6 +419,26 @@ const ENABLED = { associativeMemoryEnabled: true }
     // P5e 匿名生命周期(复审轮2;复审轮3强化时序):session-start / pre-step / turn-stopping 对
     // 无 session 身份的 agent 不得创建任何 runtime,也不得把匿名 cwd 写进 default runtime state。
     // 必须等待 >600ms(turn-stopping 的延迟 consolidation 窗口)后再断言,否则假绿。
+// ★2026-11-10 修（本机稳定复现的间歇红）：P5e 断言「匿名生命周期不改 default.ws」，
+//   但前一步 P5d 的 capAgent 触发的 `void engine.refresh(agent)` 是**发射后不管**
+//   （产品侧 index.js:9155-9159 已文档化该竞态），其 `_doRefresh` 里的 `this.state.ws = p.ws`
+//   可能晚于本步采样落地 ⇒ default.ws 从 ws-r 变成 ws-cap ⇒ 断言把「上一步的迟到写入」
+//   误报成「匿名 cwd 污染」。
+//   判据要的是「匿名 agent 不改变 default.ws」，因此必须先把在途 refresh 排空：
+//   采样到连续 3 次稳定（间隔 100ms）才记录基线。这不是放宽断言，是消除时序耦合。
+const settleDefaultWs = async () => {
+  let last = null
+  let stable = 0
+  for (let k = 0; k < 30; k++) {
+    const dd = await debugAssoc(h.registeredRoutes)
+    const dv = dd.runtimes.find((r) => r.key === 'default')
+    const cur = dv ? dv.ws : undefined
+    if (cur === last) { if (++stable >= 3) return cur } else { stable = 0; last = cur }
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return last
+}
+await settleDefaultWs()
     const beforeAnon = await debugAssoc(h.registeredRoutes)
     const anonCountBefore = beforeAnon.runtimes.length
     const defRowAnon0 = beforeAnon.runtimes.find((r) => r.key === 'default')
@@ -434,6 +454,11 @@ const ENABLED = { associativeMemoryEnabled: true }
     if (badKey) throw new Error('anonymous runtime key present: ' + badKey.key)
     const defRowAnon1 = afterAnon.runtimes.find((r) => r.key === 'default')
     if ((defRowAnon1 ? defRowAnon1.ws : undefined) !== defWsBefore) throw new Error('default runtime ws polluted by anonymous cwd: ' + JSON.stringify({ before: defWsBefore, after: defRowAnon1 && defRowAnon1.ws }))
+// ★2026-11-10 复核：本条在**当前实现下不可达**——`agent/session-start`（index.js:18499）先用
+//   `hasReliableSessionIdentity` 把匿名 agent 挡在 `runtimeFor` 之外，匿名 agent 根本到不了
+//   `_doRefresh` 的 `this.state.ws = p.ws`。实测负控（放开该身份门 + 允许 anon-cwd 写入 state.ws）
+//   都不使本条变红，而是先被上面的「不得创建 runtime」(:432) 拦住 ⇒ **本条是冗余兜底**。
+//   保留它作为纵深防御（若将来有人放宽身份门，它是第二道闸），但不把它当作已验证的有效判据。
     console.log('P5e anonymous lifecycle exclusion ✓ (delayed window included; default.ws unchanged; no anon runtimes)')
 
     // P5f 配置切换清理(复审轮2):full → counters-only 必须清零既有观察数据;重新启用后从切换点重新开始
