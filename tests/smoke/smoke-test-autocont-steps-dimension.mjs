@@ -107,10 +107,11 @@ console.log('[E] tokens 用「会话总用量」累计口径（用户本意：�
 console.log('')
 console.log('[F] 累加去重：以事件 seq 为水位，同一事件不重复计')
 {
-  t('存在累加块（cumUsageTokens 累加语句）', SRC.includes('rtOwn.cumUsageTokens = (Number(rtOwn.cumUsageTokens) || 0) + add'))
-  t('★水位用数组索引 cumUsageIdx', SRC.includes('Number(rtOwn.cumUsageIdx) || 0'))
+  t('存在回算写入（cumUsageTokens = addTokens）', SRC.includes('rtOwn.cumUsageTokens = addTokens'))
+  t('★改为从 events 回算（跨重启持久）', SRC.includes('rtOwn.totalSteps = stepsSeen.size') && SRC.includes('rtOwn.cumUsageTokens = addTokens'))
+  t('★steps 用 data.step 去重计数（与 UI 步数对齐）', SRC.includes('stepsSeen.add(String(stU))') && SRC.includes('const stU = evU.data && evU.data.step'))
   t('★不得用 event.seq 作水位（可能缺失恒 0 ⇒ 全跳过）', !SRC.includes('if (sU <= lastSeq) continue'))
-  t('事件流重置时回卷', SRC.includes('if (startIdx > events.length) startIdx = 0'))
+  t('回算以全量 events 为准（cumUsageIdx = events.length）', SRC.includes('rtOwn.cumUsageIdx = events.length'))
   t('★只统计 assistant/message（权威源）', SRC.includes('evU.type !== "assistant/message"'))
   t('★不统计 assistant/attempt（同一请求次级源会双倍）', !SRC.includes('assistant/attempt') || !SRC.includes('evU.type !== "assistant/attempt"'))
 }
