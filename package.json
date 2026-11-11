@@ -1,7 +1,7 @@
 {
   "name": "@a9i5k4/dsh-auto-memory",
   "description": "Proactive associative memory for DSH: zero-prompt recall injected before the model speaks, three-layer auto-consolidation, skill crystallization, and Astra-style context management - handoff ledgers, PLAN whiteboard, water-level sensing. Local-first, model-agnostic, zero deps. 主动联想记忆+Astra 式上下文管理:自动唤回/自动沉淀/技能固化/交接账本与白板跨窗口续命/水位感知。",
-  "version": "3.3.17",
+  "version": "3.3.18-fork.1",
   "type": "module",
   "main": "lib/index.js",
   "icon": "./icon.svg",
@@ -50,7 +50,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Aik358/dsh-auto-memory.git"
+    "url": "git+https://github.com/Xu3Zhen1/dsh-auto-memory.git",
+    "directory": "."
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"

@@ -6,6 +6,42 @@
 >
 > **中文** 该想起的，自己浮现。跨窗口 · 跨会话 · 跨工具 —— Ambient Recall · 「潜藏追忆，如影随形」
 
+---
+
+## ⚠️ 这是 fork，不是上游原版
+
+| 项 | 值 |
+|---|---|
+| 本仓库 | `Xu3Zhen1/dsh-auto-memory`（**fork**） |
+| 上游 | [`Aik358/dsh-auto-memory`](https://github.com/Aik358/dsh-auto-memory) |
+| 分支基线 | 上游 `3.4.0-alpha.5` 线 |
+| 本 fork 版本 | `3.3.18-fork.1`（**与上游同名的 3.3.17 不可互换**） |
+| npm | **不发**（`@a9i5k4/*` 是上游 scope，本 fork 无发布权限） |
+
+### 安装（走 git commit，不走 npm）
+
+```json
+// ~/.dsh/profiles/<profile>/package.json
+"@a9i5k4/dsh-auto-memory": "github:Xu3Zhen1/dsh-auto-memory#<完整40位sha>"
+```
+
+> 包名**仍为** `@a9i5k4/dsh-auto-memory`：profile 依赖名写死，改名会破坏解析。
+> 因此**判断装的是不是本 fork，看依赖里的 sha，不看 version 字段**。
+
+### 相对上游的改动（按主题）
+
+| 主题 | 内容 |
+|---|---|
+| **身份层** | `memory_whoiam` 显式创建入口；接续后项目归属反查（`recoverProjectTagForSessionPre`）+ 缺口留痕 `projectTagMissing` |
+| **接续可靠性** | 同 `to` 多条 done 记录时取最新那条（旧实现被更旧的无 tag 记录覆盖成 null） |
+| **运行时竞态** | `SessionRuntimeStore._disposedAgents`（WeakSet）—— dispose 后迟到的 `refresh`/`withAgent`/`whoiamHintForAsync` 不再重建 runtime |
+| **语义正确性** | C-01/#201：doc 侧 token-id 路径不再重复包装 specials（corpus 曾 514 > 512 且与 query 模板不一致） |
+| **测试基建** | 运行器分道判据收敛为单一变量；去硬编码本机路径；文件/目录链接能力分别探测（Windows 未开开发者模式时 SKIP 而非崩） |
+
+改动清单的权威来源是 `git log`；本条只做索引。
+
+---
+
 <p align="center">
   <a href="https://aik358.github.io/dsh-auto-memory/landing/"><strong>🌐 Landing page</strong></a> · <a href="https://aik358.github.io/dsh-auto-memory/landing/news/"><strong>📄 Technical reports</strong></a> · <a href="https://aik358.github.io/dsh-auto-memory/landing/program/"><strong>🧭 Pilot Credits Program</strong></a>
 </p>
