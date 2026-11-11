@@ -271,8 +271,48 @@ async function main() {
       if (hits !== 1) continue
       const isAuth = label.indexOf('M5') === 0
       const target = isAuth ? REAL_AUTH : (label.indexOf('M1') === 0 ? REAL_SYNC : REAL_PULL)
-      const mp = path.join(os.tmpdir(), 'mut-livelock-' + label.replace(/[^a-z0-9]/gi, '') + path.extname(target))
+      // ★2026-11-12（切片 dedupe-auth-identity）：`lib/team-auth.js` 现在有**本地模块依赖**
+      //   （`./team-primitives.js`，安全访问原语的单一实现处）。本夹具把被测文件**单独复制**到
+      //   os.tmpdir() 当变异体 ⇒ 副本按自身所在目录解析 `./team-primitives.js` 必然
+      //   ERR_MODULE_NOT_FOUND，变异体根本不是"能跑的变异实现"，而是一个加载失败的空壳。
+      //   那不是判据变红，是夹具坏了（§1.3：变异体必须语法可编译 + 真能跑）。
+      //   修法：把变异体写进**带依赖闭包的临时目录**，闭包用「从源码抽取本地 import 说明符」
+      //   机械得到（不写死文件名），这样以后再新增本地依赖也不会再踩同一条。
+      const mutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mut-livelock-'))
+      const copyLocalDeps = (absFile) => {
+        const src = fs.readFileSync(absFile, 'utf8')
+        const specs = [...src.matchAll(/^import\s+(?:[^'"\n]*?\s+from\s+)?['"](\.[^'"]+)['"]/gm)].map((m) => m[1])
+        const done = new Set()
+        for (const spec of specs) {
+          const depAbs = path.resolve(path.dirname(absFile), spec)
+          const base = path.basename(depAbs)
+          if (done.has(base)) continue
+          done.add(base)
+          const depDst = path.join(mutDir, base)
+          if (!fs.existsSync(depDst)) {
+            fs.copyFileSync(depAbs, depDst)
+            copyLocalDeps(depAbs)   // 递归：依赖的依赖（当前深度 1，写成递归以免将来踩坑）
+          }
+        }
+        return [...done]
+      }
+      const mp = path.join(mutDir, path.basename(target))
+      const depClosure = copyLocalDeps(target)
+      // ★变异体必须真的写出去（本行曾在一次编辑中丢失，症状是"变异文件语法可用"报
+      //   Cannot find module —— 看上去像依赖问题，实为文件根本没生成。留注释防复发。）
       fs.writeFileSync(mp, base.replace(from, to))
+      // ★判据必须**有鉴别力**：断言"依赖闭包与该文件源码声明的本地 import 一一对应"，
+      //   而不是断言"≥0"（那种写法恒真，等于没检查 —— 正是本项目反复踩过的假绿形态）。
+      {
+        const declared = [...base.replace(from, to).matchAll(/^import\s+(?:[^'"\n]*?\s+from\s+)?['"](\.[^'"]+)['"]/gm)]
+          .map((m) => path.basename(m[1]))
+        const declaredUniq = [...new Set(declared)]
+        const missingDeps = declaredUniq.filter((b) => !fs.existsSync(path.join(mutDir, b)))
+        ok(declaredUniq.length === depClosure.length && missingDeps.length === 0,
+          '变异体依赖闭包完备(' + label + ')：声明 ' + declaredUniq.length + ' / 复制 ' + depClosure.length
+          + (missingDeps.length ? ' / 缺失 ' + missingDeps.join(',') : ''),
+          { declaredUniq, depClosure })
+      }
       const syn = spawnSync(process.execPath, ['--check', mp], { encoding: 'utf8' })
       ok(syn.status === 0, '变异文件语法可用(' + label + ')', String(syn.stderr || '').slice(0, 160))
       const env = Object.assign({}, process.env, { LIVELOCK_CHILD: '1' })
