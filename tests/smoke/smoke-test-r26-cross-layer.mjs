@@ -639,6 +639,14 @@ eq(createHash('sha256').update(IX).digest('hex').slice(0, 16).toUpperCase(), '9E
 //   （重钉值 70C221D02149DF15 由**本套件自身的剥离表达式**复算得出：本文件第 23 行 IX 的 sha256 前 16 位大写。）
 // ★2026-09-28 计数演进：67→68（新增 skin-library-fetch，见 E3 同批）。语义保留：仍锁路由数不漂移。
 eq(cnt(IX, "path: API[") + cnt(IX, 'path: API.'), 76, 'E4 ★路由数守恒 = 76（2026-11-02 身份页签 /whoiam +1；2026-10-04 issue #211 /python-setup/uninstall +1；2026-09-28 皮肤库 +1；2026-10-01 /global-brief +1；2026-10-02 审计修复批 #174 /team-control +1；其余零新增；2026-11-08 择优移植域3 /upgrade-archive-plan +1（R148）；基线 HEAD=7c651e19+R148=1,169,527/01C3343CB31669CA；改后=1,169,655/32BFA14156C7DC6B（Δ+128））')
+// ⚠ 紧随本注释**之后**的那行 console.log('lib/client.js …') 是**纯诊断打印，不是守卫**（无 eq 断言）。
+//   本套件对 lib/client.js 的守护，只有本文件**上方 L52–L63** 的 C1/C1b/C2/C2b/C4a 等**特征计数**
+//   （防特定接线被删或重复）。
+//   client.js 的**字节守恒**按不同切面分派给另外两个套件（职责分离，刻意不在本套件重复锁）：
+//     · smoke-test-settings-archive-interval —— stripGeneratedSkin + 行级还原后的文本哈希
+//     · smoke-test-iter5-skin                 —— 9 步 replace 剥离出的 classicLF 哈希
+//   ⇒ 改 lib/client.js 后**只需重钉上述两处**；本套件的 sha16 行无需改动（它恒打印当前值）。
+//   反向提醒：有人若误以为「r26 也锁 client 字节」而只重钉 r26，那两个套件会红 —— 失效是响亮的，不是沉默的。
 console.log('lib/client.js ' + Buffer.byteLength(SRC, 'utf8') + 'B / CRLF ' + (SRC.match(/\r\n/g) || []).length + ' / sha16 ' + createHash('sha256').update(SRC).digest('hex').slice(0, 16).toUpperCase())
 console.log('PASS ' + p + ' / FAIL ' + f)
 fails.forEach((x) => console.log('  FAIL: ' + x))
