@@ -235,12 +235,26 @@ t('P3B-4b ★ evidence-store 裸 console.error 已消失 + 走实例方法', () 
 })
 
 t('P3B-4c ★ 节流表必须在模块级（同进程多实例共享，否则各自双写）', () => {
+  // ★2026-11-12 锚点迁移（**不削弱判据**）：本判据原先要求 `const _diagAt = new Map()` 与
+  //   `DIAG_THROTTLE_MS_PRE_V1 = 300000` **逐字出现在 shadow-host.js / evidence-store.js 里**。
+  //   那守的是「实现位置」，不是判据标题写的**不变量**。切片 dedupe-diag-throttle 把两处
+  //   逐字节相同的表收口到 lib/diag-throttle.js 单一实现处（DRY-C1 4 块 → 0），
+  //   表仍在模块级、仍共享、窗口仍是 5 分钟 —— 不变量没变，只是位置变了。
+  //   ⇒ 改为按**不变量**判：① 单一实现模块里表是模块级（在工厂/类之前）；② 窗口 5 分钟；
+  //     ③ 两个使用方都从该模块导入（而不是又各自抄一份）。
+  //   ⚠️ 迁移后必须自证仍有鉴别力：见 tests/smoke/smoke-test-diag-throttle.mjs 的负控
+  //      （窗口改 0 / fail-open 改 fail-closed 均真变红）。
+  const TH = rd('lib/diag-throttle.js')
+  const tableAt = TH.indexOf('const _lastReportAt = new Map()')
+  assert(tableAt >= 0, '★ diag-throttle.js 无模块级节流表')
+  const fnStart = TH.search(/^export function shouldReportDiag/m)
+  assert(fnStart > tableAt, '★ 节流表不在模块级（落在函数之后）')
+  assert(/const DIAG_THROTTLE_MS = 300000\b/.test(TH), '★ 节流窗口不是 5 分钟')
   for (const [name, src] of [['shadow-host', SH], ['evidence-store', EV]]) {
-    const i = src.indexOf('const _diagAt = new Map()')
-    assert(i >= 0, '★ ' + name + ' 无模块级节流表')
-    const fnStart = src.search(/export (function createShadowHost|class EvidenceEventStore)/)
-    assert(fnStart > i, '★ ' + name + ' 的节流表不在模块级（落在工厂/类之后）')
-    assert(/DIAG_THROTTLE_MS_PRE_V1 = 300000/.test(src), '★ ' + name + ' 节流窗口不是 5 分钟')
+    assert(/import \{ shouldReportDiag \} from '\.\/diag-throttle\.js'/.test(src),
+      '★ ' + name + ' 未从 diag-throttle.js 导入节流判据（可能又抄了一份）')
+    assert(src.indexOf('const _lastReportAt = new Map()') < 0,
+      '★ ' + name + ' 仍持有自己的节流表（收口被回退）')
   }
 })
 
