@@ -92,7 +92,16 @@ console.log('[E] tokens 用「会话总用量」累计口径（用户本意：�
   t('★rulesMet 的 tokens 读 cumUsageTokens', blkU.includes('rtR.cumUsageTokens'), blkU.slice(0, 240))
   t('★旧写法 tokens: wl.tokens, 已不存在', !blkU.includes('tokens: wl.tokens,'), blkU.slice(0, 240))
   t('保留 wl.tokens 回落（旧 runtime 兼容）', blkU.includes('wl.tokens'))
-  t('已导入 usageShapeTokensPre', SRC.includes('usageShapeTokensPre'))
+  // ★2026-11-11 修恒真判据：原写法 SRC.includes('usageShapeTokensPre') 在注释与调用点里都会命中
+  //   ⇒ 导入缺失（真 bug，曾致 ReferenceError 被 catch 静默吞掉、累加恒 0）也照样绿。
+  //   改为**解析 import 语句的具名列表**再断言。
+  {
+    const impLine = SRC.split('\n').find((l) => l.includes("from './water-window.js'")) || ''
+    const names = impLine.replace(/^import \{/, '').replace(/\} from.*$/, '').split(',').map((x) => x.trim()).filter(Boolean)
+    t('★usageShapeTokensPre 在 water-window 的 import 具名列表里', names.includes('usageShapeTokensPre'), impLine.slice(-90))
+    t('★导入名无残破（拼接错位防护）', !names.some((n) => n === 'resolveProxyUsagePr' || n === 'usageShapeTokensPree'), JSON.stringify(names))
+    t('导入列表非空（防空集恒真）', names.length >= 10, names.length)
+  }
 }
 
 console.log('')
