@@ -161,13 +161,13 @@ class BgeM3Embedder:
                 return probe[:i], probe[i + len(core):]
         raise RuntimeError('content not found in tokenizer probe')
 
-    def build_doc_ids(self, chunk_ids, max_total=512):
+    def build_doc_ids(self, chunk_ids, max_total=512, wrap=True):
         """Wrap chunk token ids with the model's special tokens exactly once,
         capping total length at the XLM-R position limit (audit P0/P1)."""
         prefix, suffix = self._specials()
         budget = max_total - len(prefix) - len(suffix)
         body = list(chunk_ids)[:max(0, budget)]
-        return list(prefix) + body + list(suffix)
+        return (list(prefix) + body + list(suffix)) if wrap else body
 
     def encode_ids(self, ids_list, batch_size=8):
         torch = self._torch
@@ -274,11 +274,11 @@ class BgeM3OnnxInt8Embedder:
                 return probe[:i], probe[i + len(core):]
         raise RuntimeError('content not found in tokenizer probe')
 
-    def build_doc_ids(self, chunk_ids, max_total=512):
+    def build_doc_ids(self, chunk_ids, max_total=512, wrap=True):
         prefix, suffix = self._specials()
         budget = max_total - len(prefix) - len(suffix)
         body = list(chunk_ids)[:max(0, budget)]
-        return list(prefix) + body + list(suffix)
+        return (list(prefix) + body + list(suffix)) if wrap else body
 
     def encode_ids(self, ids_list, batch_size=16):
         np = self._np

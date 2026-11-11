@@ -334,7 +334,11 @@ class SemanticWorker(base.Worker):
                         'occurredAt': rec.get('occurredAt'),
                         'excerpt': (ctext[:160] + '…') if len(ctext) > 160 else ctext,
                     })
-                    encode_items.append(self.embedder.build_doc_ids(ids))
+                    # ★2026-11-11 修 #201（C-01）：**只截断、不再包装**。`build_doc_ids` 原先同时加了
+                    #   [CLS]/[SEP] 与 512 截断；而 :encode_ids 内部（m7_embedding_v1.py:179）会**再包一次**
+                    #   ⇒ corpus 双包(514 tokens) vs query 单包 = template drift，且超 512 预算。
+                    #   wrap=False 让这里只保留截断职责，包装交给 encode_ids 单次完成。
+                    encode_items.append(self.embedder.build_doc_ids(ids, wrap=False))
             else:
                 texts = self._chunk_texts_for(rec.get('text') or '')
                 for ordinal, ctext in enumerate(texts):
