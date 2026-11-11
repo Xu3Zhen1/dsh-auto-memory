@@ -25,7 +25,7 @@ import {
   parseModelWindowsPre, pickWindowPre, findOfficialContextWindowPre, findSessionModelPre,
   scanPressureSignalsPre, shouldArmAutoContinuePre, reusableWindowCachePre, sessionModelSigPre, armEligiblePre,
   // ★issue #451：checkWaterLevel 新增两个引用符号（代理压缩兜底）。本套件 strictInjection 会拦漏注入。
-  detectProxyCompactionPre, resolveProxyUsagePre,
+  detectProxyCompactionPre, resolveProxyUsagePre, usageShapeTokensPre,
 } from '../../lib/water-window.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -302,6 +302,10 @@ const wlBind = (fake) => {
     //   漏注入会 throw（而非静默 ReferenceError）。这里注入真实实现：本机没有该插件 ⇒ 探测恒"absent"、
     //   兜底恒不生效 ⇒ 本套件所验证的「白板关仍测量」语义与修复前逐字节一致。
     detectProxyCompactionPre, resolveProxyUsagePre,
+    // ★2026-11-11 补：checkWaterLevel 新增累计用量统计，引用 usageShapeTokensPre（water-window.js:414）。
+    //   本套件 strictInjection=true ⇒ 漏注入会 throw。注入真实实现；事件无 usage 时返回 null ⇒ 累加 0，
+    //   本套件「白板关仍测量」语义逐字节不变。
+    usageShapeTokensPre,
     // ★2026-11-10 补：checkWaterLevel 在改为共用判据后引用 armEligiblePre（water-window.js:565），
     //   本套件 strictInjection=true ⇒ 漏注入会 throw。注入**真实实现**（非桩），保持语义与生产一致。
     armEligiblePre,

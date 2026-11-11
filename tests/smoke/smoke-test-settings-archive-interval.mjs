@@ -91,7 +91,7 @@ try {
       //   消耗；旧文案让用户按 880M 累计值配 tokens>=8e8，永不可达）、steps 文案由「步数」改为「累计步数」
       //   （实现已同步改为 totalSteps 累计）。改动在经典档手写面（生成区之外）⇒ 本锁随动，行为代码语义
       //   变更见 lib/index.js（r26 已同批重钉 CF69295AF9BD12AF）。判据意图不变（经典区字节守恒）。
-assert.equal(createHash('sha256').update(prior).digest('hex'), '649be086dd9103ba6aef4e883bbb89b9c7c650e60ac7cc25c28861fcce7c9181', 'classic client region bytes are conserved (interval control normalized back to 1/1440); ★2026-11-10 重钉（既有过期，非本轮回归：已用 HEAD 的 client.js 复跑得同一 actual；本轮 client.js 零改动）pinned upstream baseline superseded by reviewed batches [R2026-10-23: v3.3.17 版本身份三件套（指纹行 + 应用内 CHANGELOG 3.3.17 条目，均在生成块之外）⇒ 按实测 actual 重钉 e31fa808… → 5226d738…；归因实测：还原 client.js 到 HEAD 后本套件 exit=0，判据过期非缺陷]')
+assert.equal(createHash('sha256').update(prior).digest('hex'), '1c02272ffae774c2bf02c94409e6d67f618a3dfb553c3d7932d92fc0509a833c', 'classic client region bytes are conserved (interval control normalized back to 1/1440); ★2026-11-10 重钉（既有过期，非本轮回归：已用 HEAD 的 client.js 复跑得同一 actual；本轮 client.js 零改动）pinned upstream baseline superseded by reviewed batches [R2026-10-23: v3.3.17 版本身份三件套（指纹行 + 应用内 CHANGELOG 3.3.17 条目，均在生成块之外）⇒ 按实测 actual 重钉 e31fa808… → 5226d738…；归因实测：还原 client.js 到 HEAD 后本套件 exit=0，判据过期非缺陷]')
     }
   }
   console.log('PASS archive interval UI/API/runtime agree on 15–1440, invalid patches preserve configuration')

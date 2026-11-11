@@ -82,5 +82,39 @@ console.log('[D] 负控自证：把 steps 改回 lastStep ⇒ B 必红')
 }
 
 console.log('')
+console.log('')
+console.log('[E] tokens 用「会话总用量」累计口径（用户本意：跨轮累计，不是当前窗口）')
+{
+  t('runtime 有 cumUsageTokens 字段', SRC.includes('cumUsageTokens: 0,'))
+  t('runtime 有去重水位 cumUsageLastSeq', SRC.includes('cumUsageLastSeq: 0,'))
+  const atU = SRC.indexOf('rulesMet = autoContinueRulesMetPre(')
+  const blkU = SRC.slice(atU, atU + 900)
+  t('★rulesMet 的 tokens 读 cumUsageTokens', blkU.includes('rtR.cumUsageTokens'), blkU.slice(0, 240))
+  t('★旧写法 tokens: wl.tokens, 已不存在', !blkU.includes('tokens: wl.tokens,'), blkU.slice(0, 240))
+  t('保留 wl.tokens 回落（旧 runtime 兼容）', blkU.includes('wl.tokens'))
+  t('已导入 usageShapeTokensPre', SRC.includes('usageShapeTokensPre'))
+}
+
+console.log('')
+console.log('[F] 累加去重：以事件 seq 为水位，同一事件不重复计')
+{
+  t('存在累加块（cumUsageTokens 累加语句）', SRC.includes('rtOwn.cumUsageTokens = (Number(rtOwn.cumUsageTokens) || 0) + add'))
+  t('★去重：只加 seq 更大的事件', SRC.includes('if (sU <= lastSeq) continue'))
+  t('★只统计 assistant/message（权威源）', SRC.includes('evU.type !== "assistant/message"'))
+  t('★不统计 assistant/attempt（同一请求次级源会双倍）', !SRC.includes('assistant/attempt') || !SRC.includes('evU.type !== "assistant/attempt"'))
+}
+
+console.log('')
+console.log('[G] 口径对齐：usageShapeTokensPre = input+cacheRead+cacheWrite+output')
+{
+  const WW = readFileSync(path.join(ROOT, 'lib', 'water-window.js'), 'utf8').replace(/\r\n/g, '\n')
+  t('water-window 导出 usageShapeTokensPre', WW.includes('export function usageShapeTokensPre'))
+  t('★四桶求和（与 dsh-token-meter 同坐标系）', WW.includes('input + cacheRead + cacheWrite + output'))
+  const fnU = extract(WW, 'export function usageShapeTokensPre(usage) {')
+  const f2 = new Function('return (function usageShapeTokensPre(usage) ' + fnU.slice(fnU.indexOf('{')) + ')')()
+  t('形状合格：四桶和 == totalTokens ⇒ 返回和', f2({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 30, cacheWriteTokens: 20, totalTokens: 200 }) === 200)
+  t('形状不合格 ⇒ null（fail-open）', f2({ inputTokens: 100, outputTokens: 50, totalTokens: 999 }) === null)
+  t('缺必需桶 ⇒ null', f2({ outputTokens: 5 }) === null)
+}
 console.log('[autocont-steps-dimension] PASS ' + pass + ' / FAIL ' + fail)
 process.exit(fail ? 1 : 0)
