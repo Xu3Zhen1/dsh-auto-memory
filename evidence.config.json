@@ -1,0 +1,6 @@
+{
+  "tests": { "command": "node tools/accept-evidence-tests.mjs" },
+  "mutation": { "command": "node tools/mutation-scoreboard.mjs" },
+  "drift": { "command": "node tools/accept-evidence-drift.mjs" },
+  "keepOutputs": false
+}

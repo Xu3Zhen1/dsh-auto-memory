@@ -1,0 +1,54 @@
+{
+  "tests": {
+    "passed": 456,
+    "failed": 4,
+    "skipped": 0,
+    "todo": 0,
+    "total": 460
+  },
+  "mutation": {
+    "killed": 10,
+    "total": 14,
+    "survived": [
+      "M11  iter5: 首次升级路径传 saved 而非 legacy（两值同归一化为 system，不可观测）",
+      "M12  notrim: 删除 toText 的字符串提前返回（JS 字符串值类型 ⇒ 不可杀死）",
+      "M13  lock: claim 去掉 owner 的 host 字段（同机回环恒等，本机不可观测）",
+      "M14  transport-primitives: toBuffer 对 Buffer 入参也走 Buffer.from（字节等价）"
+    ],
+    "concludedAllKilled": false
+  },
+  "drift": {
+    "checks": 5,
+    "passed": 5,
+    "findings": 0,
+    "items": []
+  },
+  "meta": {
+    "generatedAt": "2026-11-12T10:37:02.515Z",
+    "cwd": "G:\\AMup\\refactor\\dsh-auto-memory",
+    "producers": {
+      "tests": {
+        "command": "node tools/accept-evidence-tests.mjs",
+        "exitCode": 0,
+        "cwd": "G:\\AMup\\refactor\\dsh-auto-memory",
+        "sha256": "287eaf65dd602bd2",
+        "bytes": 104
+      },
+      "mutation": {
+        "command": "node tools/mutation-scoreboard.mjs",
+        "exitCode": 0,
+        "cwd": "G:\\AMup\\refactor\\dsh-auto-memory",
+        "sha256": "56b3598a97c8c241",
+        "bytes": 1254
+      },
+      "drift": {
+        "command": "node tools/accept-evidence-drift.mjs",
+        "exitCode": 0,
+        "cwd": "G:\\AMup\\refactor\\dsh-auto-memory",
+        "sha256": "49e9fffce4489dbe",
+        "bytes": 36
+      }
+    },
+    "tool": "sdd-guard/tools/make-evidence.mjs"
+  }
+}

@@ -27,4 +27,14 @@ console.log('PASS three skins, independent light/dark/system, persistence, inval
 stored.delete(c.ITER5_MODE_KEY);stored.set('dam-skin-theme','dark');c=boot();assert.equal(c.iter5ReadMode(),'dark');assert.equal(stored.get(c.ITER5_MODE_KEY),'dark')
 c.iter5SetMode('light');assert.equal(boot().iter5ReadMode(),'light')
 stored.delete(c.ITER5_MODE_KEY);stored.set('dam-skin-theme','auto');assert.equal(boot().iter5ReadMode(),'system')
+// ★2026-11-12 补漏（由 ACCEPT-E2 变异计分板逼出）：legacy 判定用的是 `!= null` 而非 truthy。
+//   空串是唯一的可区分输入 —— 空串非 null ⇒ 必须走 legacy 分支 ⇒ 归一化为 'system'，
+//  **不能**因为它是 falsy 就落进 else 去采纳 saved 的 'dark'。
+//   原套件无此用例，导致「!= null → truthy」这个变异存活（真实覆盖缺口，非等价变异）。
+stored.delete(c.ITER5_MODE_KEY);stored.set('dam-skin-theme','');stored.set('dam-skin-theme','');stored.set(c.ITER5_MODE_KEY,'dark');c=boot()
+assert.equal(c.iter5ReadMode(),'system','legacy 空串仍算非空（!= null）⇒ 归一化 system，不得采纳 saved 的 dark')
+assert.equal(stored.get(c.ITER5_MODE_KEY),'system','legacy 空串分支必须镜像写回 system')
+// 对照：legacy 键**不存在**时才采纳 saved
+stored.clear();stored.set(c.ITER5_MODE_KEY,'dark');assert.equal(boot().iter5ReadMode(),'dark','legacy 缺失时采纳 saved')
+console.log('PASS legacy-empty-string is non-null (not truthy) and mirrors system')
 console.log('PASS upstream theme preference migration and explicit override precedence')
