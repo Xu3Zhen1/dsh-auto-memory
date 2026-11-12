@@ -356,9 +356,59 @@ async function main() {
   ok(i3.error.indexOf('http-timeout') >= 0, 'I3b 超时文案含 http-timeout', i3.error)
   await srvI2.close()
   const src = fs.readFileSync(MODULE_PATH, 'utf8')
-  const imports = src.match(/^import .*$/gm) || []
-  eq(imports.length, 2, 'I4 ★import 面恰好 2 条')
-  eq(imports.join(' | '), "import http from 'node:http' | import https from 'node:https'", 'I4b ★★零第三方依赖（两条 import 均为 node: 内置；不含 fetch / 不含 team-transport）')
+  // ★2026-11-12 判据升级（**加强而非放宽**，切片 dedupe-transport-primitives）：
+  //   原实现是 `imports.length === 2` 且整串逐字相等 —— 它守的是「import 面恰好这两条」，
+  //   而本条自述的意图是「★★零第三方依赖（两条 import 均为 node: 内置；不含 fetch / 不含 team-transport）」。
+  //   两者不等价：原判据会把**同样零 IO 的内部叶子模块**误判为违规，却对
+  //   「本地模块自己偷偷写盘 / 形成循环依赖」无能为力（它只验名字，不验内容与依赖图）。
+  //   新判据按不变量判，且**递归**验证整条本地依赖链：
+  //     ① 至少有一条 import（空集不得视为通过）
+  //     ② 不得出现裸包名（第三方依赖）
+  //     ③ `node:` 仅允许 node:http / node:https（本模块只该用这两个）
+  //     ④ 每条本地依赖递归：链上任何模块不得含写/删调用
+  //     ⑤ 链上不得出现 team-transport.js（**这才是 TDZ 顾虑的真实不变量**：禁止 http→transport 方向）
+  //     ⑥ 无 import 环（沿链走到叶子必须终止）
+  //   ⇒ 比原判据更严：新增「链上模块偷偷写盘」或「链上出现 team-transport」都会红，原判据看不出来。
+  const importStmts = src.match(/^import[\s\S]*?from\s+['"][^'"]+['"]/gm) || []
+  const specs = importStmts.map((s) => /from\s+['"]([^'"]+)['"]/.exec(s)[1])
+  eq(importStmts.length, specs.length, 'I4-0 import 语句与说明符数量自洽（解析器自证）')
+  ok(specs.length > 0, 'I4-0b 至少一条 import（空集不得视为通过）', specs.length + ' 条')
+  const EXTERNAL = specs.filter((s) => !s.startsWith('node:') && !s.startsWith('./'))
+  eq(EXTERNAL.length, 0, 'I4-1 ★零第三方依赖（无裸包名）')
+  const NODE_OK = new Set(['node:http', 'node:https'])
+  const badNode = specs.filter((s) => s.startsWith('node:') && !NODE_OK.has(s))
+  eq(badNode.length, 0, 'I4-2 node: 内置仅允许 node:http / node:https')
+  // 递归遍历本地依赖链
+  const IO = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|mkdirSync|mkdir|rmSync|unlinkSync|unlink|rm)\s*\(/
+  // ★★2026-11-12 补漏（负控实测暴露）：只盯「IO 函数名 + 括号」会被**别名导入**绕过——
+  //   实测 `import { writeFileSync as __wf } from 'node:fs'` + `__wf(...)` 能完全逃逸。
+  //   ⇒ 改为同时按**模块来源**判：链上任何模块不得 import 这些具备 IO/网络能力的内置。
+  const IO_NODE = new Set(['node:fs', 'node:fs/promises', 'node:child_process', 'node:net', 'node:http', 'node:https', 'node:dgram', 'node:worker_threads'])
+  const chain = new Map()   // 相对路径 -> { hasIO, ioNode, specs }
+  const seen = new Set()
+  const walk = (relFromLib) => {
+    if (seen.has(relFromLib)) return
+    seen.add(relFromLib)
+    const p = path.join(HERE, '..', '..', 'lib', relFromLib)
+    if (!fs.existsSync(p)) { chain.set(relFromLib, { hasIO: false, ioNode: [], specs: [], missing: true }); return }
+    const s = fs.readFileSync(p, 'utf8')
+    const sub = (s.match(/^import[\s\S]*?from\s+['"][^'"]+['"]/gm) || []).map((x) => /from\s+['"]([^'"]+)['"]/.exec(x)[1])
+    chain.set(relFromLib, { hasIO: IO.test(s), ioNode: sub.filter((x) => IO_NODE.has(x)), specs: sub })
+    for (const sp of sub) if (sp.startsWith('./')) walk(sp.replace(/^\.\//, ''))
+  }
+  for (const sp of specs) if (sp.startsWith('./')) walk(sp.replace(/^\.\//, ''))
+  const missingLocal = [...chain.entries()].filter(([, v]) => v.missing).map(([k]) => k)
+  eq(missingLocal.length, 0, 'I4-3 本地依赖链上无缺失模块')
+  const ioModules = [...chain.entries()].filter(([, v]) => v.hasIO).map(([k]) => k)
+  eq(ioModules.length, 0, 'I4-4 ★★本地依赖链上无写/删调用（递归验证，非只验一层）', ioModules.join(',') || chain.size + ' 个模块全部零 IO 调用')
+  const ioNodeModules = [...chain.entries()].filter(([, v]) => v.ioNode.length > 0).map(([k, v]) => k + '→' + v.ioNode.join('/'))
+  eq(ioNodeModules.length, 0, 'I4-4b ★★本地依赖链上不得 import 具备 IO/网络能力的内置（防别名逃逸）', ioNodeModules.join('; ') || '0 处')
+  const cyclesTransport = [...chain.keys()].includes('team-transport.js')
+  eq(cyclesTransport, false, 'I4-5 ★★依赖链上不含 team-transport.js（这才是 TDZ 的真不变量：禁止 http→transport）')
+  ok(chain.size > 0, 'I4-6 本地依赖链非空（证明上面的遍历真的走了，不是空集恒真）', chain.size + ' 个模块')
+  // 负控：证明判定非恒真
+  ok(IO.test("writeFileSync('x','y')") === true, 'I4-7 负控：判据认得写盘调用（非恒真）')
+  ok(!('node:fs' === 'node:http' || NODE_OK.has('node:fs')), 'I4-8 负控：node:fs 不在白名单（白名单非全集）')
   eq(/\bfetch\s*\(/.test(src.replace(/fetchImpl\(/g, '')), false, 'I5 ★源码里不直接调用 fetch（默认传输走 node:http/https）')
 
   /* ═══ J. 请求形态物理量 ═══ */
