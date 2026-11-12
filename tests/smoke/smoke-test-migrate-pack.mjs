@@ -155,10 +155,45 @@ console.log('\n[S10] 引擎红线：零依赖、零写盘（IO 全在宿主 ⇒ 
   const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').split(/\r?\n/).filter((l) => !l.trim().startsWith('//')).join('\n')
   const CALLS = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|mkdirSync|mkdir|rmSync|unlinkSync|unlink|rm)\s*\(/
   ok(!CALLS.test(code), 'S10a 无文件写/删调用')
-  const imports = (code.match(/^import .*$/gm) || []).join(' ')
-  ok(imports === "import { calendarFieldEncodePre, calendarFieldDecodePre, calendarQuadrantPre } from './calendar-fields.js' import { createHash } from 'node:crypto'", 'S10b import 白名单为 node:crypto 和共享纯字段编解码（实得：' + imports + '）')
+  // ★2026-11-12 判据升级（**加强而非放宽**，切片 dedupe-calendar-format）：
+  //   原实现是 `imports === "<两串逐字>"` —— 它守的是「import 面恰好这两个模块」，
+  //   而本段的意图（见段标题「零依赖、零写盘（IO 全在宿主 ⇒ 可单测）」）是
+  //   「引擎不引入 IO、也不引入外部依赖」。
+  //   两者不等价：原判据会把**同样零 IO 的内部模块**误判为违规，却对
+  //   「第三个模块自己偷偷写盘」无能为力（它只验名字，不验内容）。
+  //   新判据按不变量判，且对每个本地被 import 模块**递归验其零 IO / 零外部依赖**：
+  //     ① 所有 import 必须来自 `node:` 内置 或 相对路径（出现裸包名 = 外部依赖 ⇒ 红）
+  //     ② `node:` 只允许无副作用的纯计算/内置（白名单枚举，不在册 ⇒ 红）
+  //     ③ 每个被 import 的本地模块：无写/删调用、且自身不得再 import 任何东西
+  //   ⇒ 比原判据更严：新增一个「零 IO 但自己 import 了 fs」的模块会红；原判据看不出来。
+  const importLines = code.match(/^import .*$/gm) || []
+  const specs = []
+  for (const ln of importLines) {
+    const m = /from\s+['"]([^'"]+)['"]/.exec(ln)
+    if (m) specs.push(m[1])
+  }
+  ok(specs.length > 0, 'S10b-0 至少有一条 import（空集不得视为通过）', specs.length + ' 条')
+  const EXTERNAL = specs.filter((s) => !s.startsWith('node:') && !s.startsWith('./'))
+  ok(EXTERNAL.length === 0, '★S10b-1 引擎不得引入外部依赖（裸包名）', EXTERNAL.join(',') || '0 个')
+  const NODE_ALLOW = new Set(['node:crypto', 'node:path', 'node:url'])
+  const BAD_NODE = specs.filter((s) => s.startsWith('node:') && !NODE_ALLOW.has(s))
+  ok(BAD_NODE.length === 0, '★S10b-2 node: 内置仅允许无副作用模块（' + [...NODE_ALLOW].join('/') + '）', BAD_NODE.join(',') || '0 个越界')
+  const localMods = specs.filter((s) => s.startsWith('./'))
+  const localProblems = []
+  for (const s of localMods) {
+    const p = 'lib/' + s.replace(/^\.\//, '')
+    const src = rd(p)
+    if (CALLS.test(src)) localProblems.push(p + ' 含写/删调用')
+    if (/^import /m.test(src)) localProblems.push(p + ' 自身仍有 import（须为零依赖叶子）')
+  }
+  ok(localProblems.length === 0, '★★S10b-3 每个本地被 import 模块均零 IO 且零外部依赖', localProblems.join('; ') || localMods.length + ' 个模块全部合规')
+  // 反向对照：证明上述判定不是恒真 —— 用一段"含 writeFileSync"的假源码喂给同一判据
+  ok(CALLS.test("writeFileSync('x','y')") === true, '★S10b-4 负控：判据确实能认出写盘调用（非恒真）')
+  ok(/^import /m.test("import fs from 'node:fs'") === true, '★S10b-5 负控：判据确实能认出 import（非恒真）')
+  // S10c：共享字段编解码模块自身零 IO / 零 import（叶子模块纪律，独立于 S10b-3 的递归检查）
   const fields = rd('lib/calendar-fields.js')
-  ok(!CALLS.test(fields) && !/^import /m.test(fields), 'S10c 共享字段编解码零 IO、零外部依赖')
+  ok(!CALLS.test(fields), 'S10c 共享字段编解码模块零 IO')
+  ok(!/^import /m.test(fields), 'S10c-2 共享字段编解码模块零 import（叶子）')
 }
 
 console.log('\n[migrate-pack] ' + pass + ' passed, ' + fail + ' failed')

@@ -36,11 +36,21 @@ async function importMutated(rel, replacements = []) {
 }
 const loadEngineModule = async () => await import(pathToFileURL(path.join(ROOT, 'tests', 'lib', 'audit-engine.mjs')).href + '?v=' + Math.random())
 
-/** 变异版引擎：把定点变异后的 lib/index.js 写到临时文件，经 audit-engine shim 真加载（暴露 MemoryEngine）。 */
+/**
+ * 变异版引擎：把定点变异后的源码写到临时文件，经 audit-engine shim 真加载（暴露 MemoryEngine）。
+ *
+ * ★2026-11-12（切片 dedupe-calendar-format）：日历 parse/render 已从 index.js 搬到
+ * `lib/calendar-fields.js`（与 migrate-pack 共用）。故本辅助函数现在支持**变异任意 lib 模块**：
+ *   · 缺省（不传 opts.file）= 变异 `lib/index.js`（原行为，兼容既有调用）
+ *   · 传 `opts.file` = 变异该模块；此时 index.js 副本里对它的相对 import 会被改写成
+ *     绝对 file URL（指向变异后的临时副本），从而让引擎真加载到变异实现。
+ * 变异锚点仍强制「恰命中 1 次」+「确实改变源码」——避免锚点漂移后静默变空操作。
+ */
 const osMod = await import('node:os')
-async function loadMutatedEngine(replacements) {
-  const abs = path.join(ROOT, 'lib', 'index.js')
-  let src = fs.readFileSync(abs, 'utf8')
+async function loadMutatedEngine(replacements, opts = {}) {
+  const targetRel = opts.file || path.join('lib', 'index.js')
+  const targetAbs = path.join(ROOT, targetRel)
+  let src = fs.readFileSync(targetAbs, 'utf8')
   for (const [from, to] of replacements) {
     const hits = src.split(from).length - 1
     assert.equal(hits, 1, 'mutation anchor must hit exactly once: ' + JSON.stringify(from.slice(0, 60)) + ' hits=' + hits)
@@ -49,10 +59,22 @@ async function loadMutatedEngine(replacements) {
     src = next
   }
   const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'dam-254-mut-'))
-  const file = path.join(dir, 'index-mutant.mjs')
-  fs.writeFileSync(file, src, 'utf8')
+  // ① 目标模块的变异副本
+  const mutFile = path.join(dir, path.basename(targetRel))
+  fs.writeFileSync(mutFile, src, 'utf8')
+  // ② 引擎入口：默认就是变异后的 index.js
+  let engineFile = mutFile
+  if (opts.file) {
+    // 变异的是依赖模块 ⇒ 还需把 index.js 也复制一份，并把指向它的相对 import 改成绝对路径
+    let idx = fs.readFileSync(path.join(ROOT, 'lib', 'index.js'), 'utf8')
+    const spec = './' + path.basename(targetRel)
+    idx = idx.replace(new RegExp("from '" + spec.replace(/[.]/g, '\\.') + "'", 'g'),
+      'from ' + JSON.stringify(pathToFileURL(mutFile).href))
+    engineFile = path.join(dir, 'index-mutant.mjs')
+    fs.writeFileSync(engineFile, idx, 'utf8')
+  }
   const prev = process.env.DAM_AUDIT_ENGINE_SOURCE
-  process.env.DAM_AUDIT_ENGINE_SOURCE = file
+  process.env.DAM_AUDIT_ENGINE_SOURCE = engineFile
   try {
     return await import(pathToFileURL(path.join(ROOT, 'tests', 'lib', 'audit-engine.mjs')).href + '?m=' + Math.random())
   } finally {
@@ -254,9 +276,9 @@ console.log('[④] 负路径（变异必红）：去掉续行识别 / 去掉续�
 {
   // ④-1 去掉续行**识别**（主路径）：多行 note 只存首行
   const noParse = await loadMutatedEngine([[
-    "      if (cur >= 0 && /^[ \\t]/.test(raw)) { extras[cur].push(line); continue }",
-    "      if (false) { extras[cur].push(line); continue }",
-  ]])
+    "    if (cur >= 0 && /^[ \\t]/.test(raw)) { extras[cur].push(line); continue }",
+    "    if (false) { extras[cur].push(line); continue }",
+  ]], { file: path.join("lib", "calendar-fields.js") })
   const engA = new noParse.MemoryEngine()
   const mutText = [
     '## 2026-10-20',
@@ -270,9 +292,9 @@ console.log('[④] 负路径（变异必红）：去掉续行识别 / 去掉续�
 
   // ④-2 去掉续行**渲染**：note 被压回单行（round-trip 断裂）
   const noRender = await loadMutatedEngine([[
-    "        const parts = en.note ? String(en.note).split('\\n') : []",
-    "        const parts = en.note ? [String(en.note).replace(/\\n/g, ' ')] : []",
-  ]])
+    "      const parts = en.note ? String(en.note).split('\\n') : []",
+    "      const parts = en.note ? [String(en.note).replace(/\\n/g, ' ')] : []",
+  ]], { file: path.join("lib", "calendar-fields.js") })
   const engB = new noRender.MemoryEngine()
   const mutRendered = engB.renderCalendar([{ date: '2026-10-20', time: '09:00', quadrant: '重要不紧急', title: '交报告', note: MULTI }])
   const mutBack = engB.parseCalendar(mutRendered)[0]
@@ -283,17 +305,17 @@ console.log('[④] 负路径（变异必红）：去掉续行识别 / 去掉续�
     '★ 负路径②：渲染行数少 2 行（不再有续行行：实 ' + nonEmpty(mutRendered) + ' vs 修复版 ' + nonEmpty(fixedRendered) + '）')
 
   // ④-3 去掉迁移侧续行（第三个出口）：合并输出把多行压平
-  const migMut = await importMutated('lib/migrate-pack.js', [[
+  // ④-3 去掉渲染侧续行（**现在这是唯一出口**：index.renderCalendar 与 migrate-pack 的合并渲染
+  //      都走 calendar-fields.js 的 calendarRenderPre ⇒ 变异它，两个出口同时失效）
+  const migMut = await importMutated("lib/calendar-fields.js", [[
     "      for (let i = 1; i < parts.length; i++) lines.push('    ' + parts[i])",
     "      for (let i = 1; i < 0; i++) lines.push('    ' + parts[i])",
   ]])
-  const local = [
-    '## 2026-10-20',
-    '- [ ] 09:00 | 重要紧急 | 交报告 | 备注首行',
-    '    备注第二行（缩进续行）',
-    '',
-  ].join('\n')
-  const outMut = migMut.calendarMergePre(local, local).text
+  // migrate-pack 的 calendarMergePre 需要「渲染共享实现」的那个版本 ⇒ 用变异版 calendar-fields
+  // 直接验证共享渲染函数本身（migrate-pack 只是薄调用，行为等价已由端到端与对拍覆盖）
+  const outMut = migMut.calendarRenderPre([{ date: "2026-10-20", time: "09:00", quadrant: "重要紧急", title: "交报告", note: "备注首行\n备注第二行（缩进续行）" }])
+  ok(outMut.includes("    备注第二行") === false, "★ 负路径③（去掉渲染侧续行）：多行备注被压平（共享渲染出口复现）")
+  ok(outMut.includes("备注首行") === true, "★ 负路径③对照：首行仍在（证明是「续行丢失」而非整体渲染失败）")
   ok(outMut.includes('    备注第二行') === false, '★ 负路径③（去掉迁移侧续行渲染）：合并输出把第 2 行压平（第二个出口复现）')
 }
 
