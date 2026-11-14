@@ -203,16 +203,35 @@ const SURVIVED_KNOWN = [
   { id: 'M14', label: 'transport-primitives: toBuffer 对 Buffer 入参也走 Buffer.from（字节等价）' },
 ]
 
-/* ══════════ 输出：sdd-guard parseMutationReport 可解析的格式 ══════════ */
-let killed = 0, total = 0
+/* ══════════ 输出：sdd-guard parseMutationReport 可解析的格式 ══════════
+ *
+ * ★三态而非二态（2026-11-14 修）：
+ *   旧版只按 `killed` 二分 ⇒ ANCHOR-MISS（锚点未命中、变异从未执行）显示成 `✗`，
+ *   与「应用了但杀不死」同形，于是 `survived` 把「没测」算成「测了没过」。
+ *   实测事故：M9 的锚点 `localStorage.setItem(ITER5_MODE_KEY, mirrored)`
+ *   只存在于被 B' 排除的 `cf8c7a0e`，主线 `220e0cac` 中命中 0 次，
+ *   却被计入 survived，使「9 杀 + 4 等价」显示成「9 杀 5 存」。
+ *
+ * ★符号选择：ANCHOR-MISS 行用 `⊘`（不是 ✓/✗）。
+ *   依据：sdd-guard 的 parseMutationReport 正则为
+ *   /^\s*([A-Za-z][\w-]*\d[\w-]*)\s+(.*?)([✓✗])/ —— 只认 ✓/✗，
+ *   故 `⊘` 行会被解析器**忽略** ⇒ 自动实现「不计入分母」，无需另加字段。
+ *  （已实测：喂含 ⊘ 行的报告，解析出的 total 只数 ✓/✗ 行。）
+ */
+let killed = 0, applicable = 0, anchorMiss = 0
 for (const r of results) {
-  total++
+  if (r.status === 'ANCHOR-MISS') {
+    anchorMiss++
+    console.log(`${r.id.padEnd(4)} ${label(r)}  ⊘  ${r.note || '锚点未命中'}`)
+    continue
+  }
+  applicable++
   const mark = r.killed ? '✓' : '✗'
   if (r.killed) killed++
   console.log(`${r.id.padEnd(4)} ${label(r)}  ${mark}`)
 }
 for (const s of SURVIVED_KNOWN) {
-  total++
+  applicable++
   console.log(`${s.id.padEnd(4)} ${s.label}  ✗`)
 }
 
@@ -220,8 +239,11 @@ function label(r) {
   return r.label
 }
 
-const survived = results.filter((r) => !r.killed).length + SURVIVED_KNOWN.length
+const survived = results.filter((r) => r.status !== 'ANCHOR-MISS' && !r.killed).length + SURVIVED_KNOWN.length
 console.log('')
-console.log(`变异统计：killed=${killed} total=${total} survived=${survived}`)
-if (survived === 0) console.log('全部变异均被捕获')
+console.log(`变异统计：killed=${killed} applicable=${applicable} survived=${survived} anchorMiss=${anchorMiss}`)
+if (anchorMiss > 0) {
+  console.log(`⚠ ${anchorMiss} 个变异锚点未命中（目标代码在本分支不存在）⇒ 未执行，不计入分母`)
+}
+if (survived === 0) console.log('全部可应用变异均被捕获')
 else console.log(`存在 ${survived} 个存活变异（其中 ${SURVIVED_KNOWN.length} 个已定性为等价变异）`)
