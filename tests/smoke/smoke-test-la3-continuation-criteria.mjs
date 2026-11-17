@@ -1,6 +1,10 @@
 /**
  * smoke-test-la3-continuation-criteria —— 批 A-1 后端接续判据验收（#285 / #286，2026-10-08）。
  *
+ * ★2026-11-17 口径收窄：本套件默认 `autoContinueAfterTask: false`（只测倒计时模式的 defer 语义）。
+ *   afterTask 模式把 `expiresAt` 当兜底上限，与这里 `expiresAt = now-1` 的"倒计时到期"含义相反，
+ *   两种模式不能共用同一 fixture。afterTask 侧由 smoke-test-autocont-aftertask-no-countdown 覆盖。
+ *
  * #285：硬信号可 arm，但前端确认卡按普通比例门过滤 ⇒ 已 armed 却无入口。
  *   本道只做**后端**：把硬触发身份（hard / hardReason / hardAt）带进 arm 快照与状态投影，
  *   让协议**透出足够信息**（前端那半属 A-2 车道）。非硬信号路径行为必须逐字节不变。
@@ -59,6 +63,13 @@ function mkEngine (mod, home) {
   eng.config = Object.assign({}, eng.config, {
     autoContinueEnabled: true, autoContinueThreshold: 0.75, autoContinueCooldownMinutes: 1,
     autoContinueConfirmSeconds: 35,
+    // ★2026-11-17（本套件口径收窄，不是放宽判据）：#286 的 defer 语义**只存在于倒计时模式**。
+    //   本套件全部夹具都用 `armed.expiresAt = Date.now() - 1` 表示「倒计时到期」，而在 afterTask 模式下
+    //   该字段是**兜底上限**（默认 30 分钟），"到期"的含义变成「长任务兜底已到」⇒ 那时接续本来就该执行。
+    //   两种模式下同一个 fixture 语义相反，故这里显式关掉 afterTask，只测它真正要测的倒计时 defer；
+    //   afterTask 侧的等价性质（running ⇒ 继续等、兜底到期 ⇒ 执行、未知 ⇒ 不当作空闲）由
+    //   smoke-test-autocont-aftertask-no-countdown 覆盖。两条合起来仍是完整覆盖面。
+    autoContinueAfterTask: false,
   })
   eng.state.ws = home
   const agent = { session: { id: 'src-1', header: { id: 'src-1', cwd: home } } }
