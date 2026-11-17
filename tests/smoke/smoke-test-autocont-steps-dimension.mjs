@@ -53,12 +53,17 @@ console.log('[A] 行为：累计步数 1657 应满足 steps>=1600（旧实现给
 console.log('')
 console.log('[B] 接线：rulesMet 构造 metrics 时 steps 必须用 totalSteps')
 {
+  // ★2026-11-17：计数取法已抽到 autoContinueMetricsPre（判据与 armed.metrics 同源）。
+  //   接线判据随之改为「调用点走该函数 + 该函数内 steps 读 totalSteps」——比断言调用点内联字段更强：
+  //   后者在两处各自维护时永远是绿的，正是本次缺陷（同名不同量纲）能活下来的原因。
   const at = SRC.indexOf('rulesMet = autoContinueRulesMetPre(')
   t('找到 rulesMet 调用点', at > 0)
   const block = SRC.slice(at, at + 700)
-  t('★steps 读取 totalSteps', block.includes('rtR.totalSteps'), block.slice(0, 200))
+  t('★rulesMet 的 metrics 实参走 autoContinueMetricsPre', block.includes('autoContinueMetricsPre(wl, rtR)'), block.slice(0, 200))
+  const mFn = extract(SRC, 'export function autoContinueMetricsPre(wl, rt) {')
+  t('★metrics 函数内 steps 读取 totalSteps', mFn.includes('r.totalSteps'), mFn.slice(0, 200))
   t('★旧写法 steps: rtR && rtR.lastStep, 已不存在', !block.includes('steps: rtR && rtR.lastStep,'), block.slice(0, 200))
-  t('保留 lastStep 回落（兼容旧 runtime）', block.includes('lastStep'))
+  t('保留 lastStep 回落（兼容旧 runtime）', mFn.includes('r.lastStep'))
 }
 
 console.log('')
@@ -70,15 +75,19 @@ console.log('[C] 去重：累加必须「新 step 值才 +1」')
 }
 
 console.log('')
-console.log('[D] 负控自证：把 steps 改回 lastStep ⇒ B 必红')
+console.log('[D] 负控自证：把 metrics 函数里的 steps 改回 lastStep ⇒ B 必红')
 {
-  const OLD = 'steps: rtR && (Number(rtR.totalSteps) > 0 ? Number(rtR.totalSteps) : rtR.lastStep),'
+  // ★2026-11-17：变异锚点随取法上移到 autoContinueMetricsPre。
+  const OLD = 'const steps = r && Number(r.totalSteps) > 0 ? Number(r.totalSteps) : (r && Number(r.lastStep) > 0 ? Number(r.lastStep) : 0)'
   t('变异锚点存在', SRC.includes(OLD))
-  const mutated = SRC.replace(OLD, 'steps: rtR && rtR.lastStep,')
+  const mutated = SRC.replace(OLD, 'const steps = Number(r && r.lastStep) || 0')
   t('变异真应用（源码确实变了）', mutated !== SRC)
-  const mAt = mutated.indexOf('rulesMet = autoContinueRulesMetPre(')
-  const mBlock = mutated.slice(mAt, mAt + 700)
-  t('★变异后 B 的判据必然不成立（证明有鉴别力）', !mBlock.includes('rtR.totalSteps') && mBlock.includes('steps: rtR && rtR.lastStep,'), mBlock.slice(0, 200))
+  const mFn = extract(mutated, 'export function autoContinueMetricsPre(wl, rt) {')
+  t('★变异后 B 的判据必然不成立（证明有鉴别力）', !mFn.includes('r.totalSteps') && mFn.includes('r.lastStep'), mFn.slice(0, 200))
+  // 行为层同步：变异体在真机那一帧必须给出 3（判据要 1600）⇒ 接续不会发生
+  const fMut = new Function('return (function autoContinueMetricsPre(wl, rt) ' + mFn.slice(mFn.indexOf('{')) + ')')()
+  const got = fMut({ ratio: 0.72, tokens: 717397 }, { totalSteps: 2129, lastStep: 3, cumUsageTokens: 1120000000, lastTurn: 135 })
+  t('★变异体行为：steps=3（<1600）⇒ 该帧不该接续', got.steps === 3, JSON.stringify(got))
 }
 
 console.log('')
@@ -89,9 +98,11 @@ console.log('[E] tokens 用「会话总用量」累计口径（用户本意：�
   t('runtime 有去重水位 cumUsageIdx（数组索引，非 seq）', SRC.includes('cumUsageIdx: 0,'))
   const atU = SRC.indexOf('rulesMet = autoContinueRulesMetPre(')
   const blkU = SRC.slice(atU, atU + 900)
-  t('★rulesMet 的 tokens 读 cumUsageTokens', blkU.includes('rtR.cumUsageTokens'), blkU.slice(0, 240))
+  const mFnU = extract(SRC, 'export function autoContinueMetricsPre(wl, rt) {')
+  t('★rulesMet 的 metrics 实参走统一取法', blkU.includes('autoContinueMetricsPre(wl, rtR)'), blkU.slice(0, 240))
+  t('★该函数内 tokens 读 cumUsageTokens', mFnU.includes('r.cumUsageTokens'), mFnU.slice(0, 240))
   t('★旧写法 tokens: wl.tokens, 已不存在', !blkU.includes('tokens: wl.tokens,'), blkU.slice(0, 240))
-  t('保留 wl.tokens 回落（旧 runtime 兼容）', blkU.includes('wl.tokens'))
+  t('保留 wl.tokens 回落（旧 runtime 兼容）', mFnU.includes('w.tokens'))
   // ★2026-11-11 修恒真判据：原写法 SRC.includes('usageShapeTokensPre') 在注释与调用点里都会命中
   //   ⇒ 导入缺失（真 bug，曾致 ReferenceError 被 catch 静默吞掉、累加恒 0）也照样绿。
   //   改为**解析 import 语句的具名列表**再断言。
