@@ -85,7 +85,12 @@ console.log('[B] 接线：rulesMet 与 armed.metrics 必须走同一取法')
   const atRules = SRC.indexOf('rulesMet = autoContinueRulesMetPre(')
   t('找到 rulesMet 调用点', atRules > 0)
   const rulesRange = SRC.slice(atRules, atRules + 400)
-  t('★rulesMet 的 metrics 实参是 autoContinueMetricsPre(...)', /autoContinueMetricsPre\(/.test(rulesRange), rulesRange.slice(0, 220))
+  // ★2026-11-26：取法上移到 `const metNow = autoContinueMetricsPre(wl, rtR)`，rulesMet 传 metNow。
+  //   判据随之改为「上游那行调 autoContinueMetricsPre 且 rulesMet 用的是同一个变量」——比断言内联调用更强：
+  //   它同时钉住「确实调了」与「传的就是它算出来的那份」。
+  const metLine = 'const metNow = autoContinueMetricsPre(wl, rtR)'
+  t('★上游确实调 autoContinueMetricsPre 产出 metNow', SRC.includes(metLine), metLine)
+  t('★rulesMet 的 metrics 实参就是 metNow（同一份）', /autoContinueRulesMetPre\([^)]*metNow/.test(rulesRange), rulesRange.slice(0, 220))
   t('★rulesMet 处不再内联五个计数字段', !/steps:\s*rtR/.test(rulesRange) && !/tokens:\s*rtR/.test(rulesRange), rulesRange.slice(0, 260))
 
   const atMetrics = SRC.indexOf('metrics: (function () {')
@@ -98,9 +103,11 @@ console.log('[B] 接线：rulesMet 与 armed.metrics 必须走同一取法')
 
   // 同源判据：两处引用的函数名必须同名 —— 改任一处取法都会让这里失配
   const nameAt = (s) => { const m = /(autoContinue[A-Za-z]*Metrics[A-Za-z]*Pre)\(/.exec(s); return m ? m[1] : '' }
-  t('★两处引用的计数函数同名（同源的机器判据）',
-    nameAt(rulesRange) !== '' && nameAt(rulesRange) === nameAt(metroRange),
-    nameAt(rulesRange) + ' vs ' + nameAt(metroRange))
+  // ★2026-11-26：rulesMet 侧现在传变量名而非调用，故同源判据改为「两边都能追溯到这个取法函数」：
+  //   ① metrics 侧直接调用它；② 判据侧用的是它产出的那个变量（metNow）。两者缺一即红。
+  t('★两处引用同一个取法（metrics 侧调用它 + 判据侧用它的产物 metNow）',
+    nameAt(metroRange) === 'autoContinueMetricsPre' && /metNow/.test(rulesRange),
+    nameAt(metroRange) + ' / metNow=' + /metNow/.test(rulesRange))
 }
 
 console.log('')

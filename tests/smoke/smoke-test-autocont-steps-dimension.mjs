@@ -37,9 +37,9 @@ function extract(src, h) {
 }
 
 // ---- A：真跑被测实现（源码抽取，不依赖宿主） ----
-const HEAD = 'export function autoContinueRulesMetPre(rules, combine, metrics) {'
+const HEAD = 'export function autoContinueRulesMetPre(rules, combine, metrics, tierMode) {'
 const fnSrc = extract(SRC, HEAD)
-const fn = new Function('return (function autoContinueRulesMetPre(rules, combine, metrics) ' + fnSrc.slice(fnSrc.indexOf('{')) + ')')()
+const fn = new Function('return (function autoContinueRulesMetPre(rules, combine, metrics, tierMode) ' + fnSrc.slice(fnSrc.indexOf('{')) + ')')()
 const rulesMet = fn
 
 console.log('[A] 行为：累计步数 1657 应满足 steps>=1600（旧实现给 lastStep=3 ⇒ 不满足）')
@@ -59,7 +59,10 @@ console.log('[B] 接线：rulesMet 构造 metrics 时 steps 必须用 totalSteps
   const at = SRC.indexOf('rulesMet = autoContinueRulesMetPre(')
   t('找到 rulesMet 调用点', at > 0)
   const block = SRC.slice(at, at + 700)
-  t('★rulesMet 的 metrics 实参走 autoContinueMetricsPre', block.includes('autoContinueMetricsPre(wl, rtR)'), block.slice(0, 200))
+  // ★2026-11-26：取法上移成 `const metNow = autoContinueMetricsPre(wl, rtR)`，rulesMet 传 metNow。
+  //   判据改成「上游调它 + 判据传它的产物」，比断言内联调用更强（同时钉住调用与传参同源）。
+  t('★上游调 autoContinueMetricsPre 产出 metNow', SRC.includes('const metNow = autoContinueMetricsPre(wl, rtR)'), block.slice(0, 200))
+  t('★rulesMet 的 metrics 实参是 metNow', /autoContinueRulesMetPre\([^)]*metNow/.test(block), block.slice(0, 200))
   const mFn = extract(SRC, 'export function autoContinueMetricsPre(wl, rt) {')
   t('★metrics 函数内 steps 读取 totalSteps', mFn.includes('r.totalSteps'), mFn.slice(0, 200))
   t('★旧写法 steps: rtR && rtR.lastStep, 已不存在', !block.includes('steps: rtR && rtR.lastStep,'), block.slice(0, 200))
@@ -99,7 +102,7 @@ console.log('[E] tokens 用「会话总用量」累计口径（用户本意：�
   const atU = SRC.indexOf('rulesMet = autoContinueRulesMetPre(')
   const blkU = SRC.slice(atU, atU + 900)
   const mFnU = extract(SRC, 'export function autoContinueMetricsPre(wl, rt) {')
-  t('★rulesMet 的 metrics 实参走统一取法', blkU.includes('autoContinueMetricsPre(wl, rtR)'), blkU.slice(0, 240))
+  t('★rulesMet 的 metrics 实参走统一取法（metNow 由该函数产出）', blkU.includes('metNow') && SRC.includes('const metNow = autoContinueMetricsPre(wl, rtR)'), blkU.slice(0, 240))
   t('★该函数内 tokens 读 cumUsageTokens', mFnU.includes('r.cumUsageTokens'), mFnU.slice(0, 240))
   t('★旧写法 tokens: wl.tokens, 已不存在', !blkU.includes('tokens: wl.tokens,'), blkU.slice(0, 240))
   t('保留 wl.tokens 回落（旧 runtime 兼容）', mFnU.includes('w.tokens'))
