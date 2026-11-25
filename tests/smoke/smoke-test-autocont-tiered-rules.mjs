@@ -183,13 +183,89 @@ console.log('')
 console.log('[F] 接线：arm 侧必须真的记录 base 基线（否则 compactionsAfterBase 恒 0，trigger 永不触发）')
 {
   t('存在 _baseMetAt 写入', SRC.includes('rtR._baseMetAt = Date.now()'))
-  t('存在 _baseCompactAt 写入（记录当时的压缩计数）', SRC.includes('rtR._baseCompactAt = Number(rtR.compactCount) || 0'))
+  t('存在 _baseCompactAt 写入，且与判据同一口径（metNow.compactions）', SRC.includes('rtR._baseCompactAt = metNow.compactions'))
   t('★只在未记录时写一次（不因 base 波动而重置）', SRC.includes('!(rtR._baseMetAt > 0)'))
   t('★调用点默认开启分层（只有显式 off 才退回旧语义）', SRC.includes("autoContinueRuleTierMode === 'off' ? '' : 'auto'"))
   const mFn = extract(SRC, 'export function autoContinueMetricsPre(wl, rt) {')
   t('metrics 透出 compactionsAfterBase', mFn.includes('compactionsAfterBase'))
   t('metrics 透出 baseMet', mFn.includes('baseMet'))
   t('无基线时 compactionsAfterBase=0（不会把历史压缩算进去）', mFn.includes('baseCompactAt === null ? 0'))
+}
+
+console.log('')
+console.log('[G] 压缩次数必须来自 events 回算（跨重启持久），不能是进程内 +1')
+{
+  // ★2026-11-26：压缩回算已抽到 lib/autocont-progress.js（判据在 [H] 段直接跑该模块）。
+  //   这里只钉「扫描块确实把模块结果写进 runtime」，实现位置变了但判据意图不变。
+  const PROG = readFileSync(path.join(ROOT, 'lib', 'autocont-progress.js'), 'utf8')
+  t('★回算模块统计 compaction/start', PROG.includes("ev.type === 'compaction/start'"))
+  t('★扫描块写入 totalCompactions（来自回算）', SRC.includes('rtOwn.totalCompactions = prog.totalCompactions'))
+  const mFn = extract(SRC, 'export function autoContinueMetricsPre(wl, rt) {')
+  t('★metrics 优先读 totalCompactions（跨重启持久）', mFn.includes('r.totalCompactions'), mFn.slice(0, 260))
+  t('回落进程内 compactCount（旧 runtime 兼容）', mFn.includes('r.compactCount'))
+  t('★base 基线用同一口径（metNow.compactions），不混用两个来源', SRC.includes('rtR._baseCompactAt = metNow.compactions'))
+
+  // 行为：给了 totalCompactions 必须以它为准，忽略过期的 compactCount
+  const f = new Function('return (function autoContinueMetricsPre(wl, rt) ' + mFn.slice(mFn.indexOf('{')) + ')')()
+  const got = f({ ratio: 0.5, tokens: 100 }, { totalSteps: 1, lastTurn: 1, cumUsageTokens: 9, totalCompactions: 7, compactCount: 1, _baseCompactAt: 3, _baseMetAt: 1 })
+  t('★totalCompactions=7 / compactCount=1 ⇒ 取 7', got.compactions === 7, got.compactions)
+  t('★base 之后 = 7-3 = 4（两个口径一致后才成立）', got.compactionsAfterBase === 4, got.compactionsAfterBase)
+
+  // 负控：把 metrics 改回只读 compactCount ⇒ 上面两条必红
+  const OLDM = "  const compactFromEvents = r && Number.isFinite(Number(r.totalCompactions)) && Number(r.totalCompactions) >= 0 ? Number(r.totalCompactions) : null"
+  t('负控锚点存在', SRC.includes(OLDM))
+  const mut = SRC.replace(OLDM, '  const compactFromEvents = null')
+  t('负控变异真应用', mut !== SRC)
+  const mFn2 = extract(mut, 'export function autoContinueMetricsPre(wl, rt) {')
+  const f2 = new Function('return (function autoContinueMetricsPre(wl, rt) ' + mFn2.slice(mFn2.indexOf('{')) + ')')()
+  const got2 = f2({ ratio: 0.5, tokens: 100 }, { totalSteps: 1, lastTurn: 1, cumUsageTokens: 9, totalCompactions: 7, compactCount: 1, _baseCompactAt: 3, _baseMetAt: 1 })
+  t('★变异体取 compactCount=1（G 段判据此时必然不成立 ⇒ 有鉴别力）', got2.compactions === 1, got2.compactions)
+}
+
+console.log('')
+console.log('[H] 「到位后压缩次数」必须按**会话历史**回算（不是本次启动之后）')
+{
+  const { autoContinueCompactionProgressPre } = await import('../../lib/autocont-progress.js')
+  const sum = (u) => (u && Number.isFinite(Number(u.totalTokens)) ? Number(u.totalTokens) : null)
+  // 造：前 5 条 assistant/message（steps=5）+ 1 次压缩 + 再 4 条（steps=9）+ 2 次压缩
+  const ev = []
+  for (let i = 0; i < 5; i++) ev.push({ type: 'assistant/message', data: { usage: { totalTokens: 100000000 } } })
+  ev.push({ type: 'compaction/start' })
+  for (let i = 0; i < 4; i++) ev.push({ type: 'assistant/message', data: { usage: { totalTokens: 100000000 } } })
+  ev.push({ type: 'compaction/start' })
+  ev.push({ type: 'compaction/start' })
+  // base = steps>=5（在第 5 条事件时成立，那时压缩 0 次）
+  const prog = autoContinueCompactionProgressPre(ev, [{ k: 'steps', op: '>=', v: 5 }], 'auto', sum)
+  t('totalCompactions 数全历史（3 次）', prog.totalCompactions === 3, prog.totalCompactions)
+  t('★base 在 steps=5 时到位（压缩 0 次）⇒ 到位后压缩 = 3', prog.compactionsAfterBase === 3, prog.compactionsAfterBase)
+  t('baseMet=true', prog.baseMet === true, prog.baseMet)
+
+  // base 太晚成立（steps>=100）⇒ 永不达标 ⇒ 到位后 = 0
+  const prog2 = autoContinueCompactionProgressPre(ev, [{ k: 'steps', op: '>=', v: 100 }], 'auto', sum)
+  t('★base 从未达标 ⇒ compactionsAfterBase=0（不许把历史压缩算进来）', prog2.baseMet === false && prog2.compactionsAfterBase === 0, JSON.stringify(prog2))
+
+  // 无 base 规则 ⇒ 视为已到位，全历史压缩都算
+  const prog3 = autoContinueCompactionProgressPre(ev, [{ k: 'ratio', op: '>=', v: 0.7 }], 'auto', sum)
+  t('无 base 规则 ⇒ 到位后 = 全历史（3）', prog3.baseMet === true && prog3.compactionsAfterBase === 3, JSON.stringify(prog3))
+
+  // 显式 tier 优先：把 steps 标成 trigger ⇒ 不再是 base
+  const prog4 = autoContinueCompactionProgressPre(ev, [{ k: 'steps', op: '>=', v: 5, tier: 'trigger' }], 'auto', sum)
+  t('★显式 tier:trigger 的 steps 不算 base ⇒ 到位后 = 全历史', prog4.compactionsAfterBase === 3, prog4.compactionsAfterBase)
+
+  // tierMode='off' ⇒ 不推断，steps 不归 base
+  const prog5 = autoContinueCompactionProgressPre(ev, [{ k: 'steps', op: '>=', v: 5 }], 'off', sum)
+  t('tierMode=off ⇒ 不推断 base', prog5.compactionsAfterBase === 3, prog5.compactionsAfterBase)
+}
+
+console.log('')
+console.log('[I] 接线：扫描块必须把回算结果写进 runtime，metrics 优先读它')
+{
+  t('import autocont-progress', SRC.includes("from './autocont-progress.js'"))
+  t('★扫描块调用 autoContinueCompactionProgressPre', SRC.includes('const prog = autoContinueCompactionProgressPre(events,'))
+  t('★写入 rtOwn.compactionsAfterBase', SRC.includes('rtOwn.compactionsAfterBase = prog.compactionsAfterBase'))
+  const mFn = extract(SRC, 'export function autoContinueMetricsPre(wl, rt) {')
+  t('★metrics 优先读 r.compactionsAfterBase（回算值）', mFn.includes('r.compactionsAfterBase'), mFn.slice(0, 300))
+  t('仍有运行时零点回落（旧 runtime 兼容）', mFn.includes('_baseCompactAt'))
 }
 
 console.log('')

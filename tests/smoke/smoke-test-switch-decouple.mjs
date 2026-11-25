@@ -27,6 +27,9 @@ import {
   // ★issue #451：checkWaterLevel 新增两个引用符号（代理压缩兜底）。本套件 strictInjection 会拦漏注入。
   detectProxyCompactionPre, resolveProxyUsagePre, usageShapeTokensPre,
 } from '../../lib/water-window.js'
+// ★2026-11-26：checkWaterLevel 新增引用 autoContinueCompactionProgressPre（压缩次数事件回算）。
+//   本套件 strictInjection=true，漏注入会直接报「注入表缺少 …」而不是静默 ReferenceError。
+import { autoContinueCompactionProgressPre } from '../../lib/autocont-progress.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const SRC = readFileSync(path.resolve(HERE, '..', '..', 'lib', 'index.js'), 'utf8')
@@ -309,6 +312,7 @@ const wlBind = (fake) => {
     // ★2026-11-10 补：checkWaterLevel 在改为共用判据后引用 armEligiblePre（water-window.js:565），
     //   本套件 strictInjection=true ⇒ 漏注入会 throw。注入**真实实现**（非桩），保持语义与生产一致。
     armEligiblePre,
+    autoContinueCompactionProgressPre,
   }, { strictInjection: true })
 }
 // 会话事件里带真实模型(request/header)→ 白板关时这个「模型已知」也必须有地方落下去
